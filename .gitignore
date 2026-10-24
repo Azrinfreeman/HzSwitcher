@@ -1,0 +1,12 @@
+# build output
+bin/
+obj/
+*.pdb
+
+# release binaries (rebuild with dotnet publish / ISCC, see README)
+artifacts/**/*.exe
+artifacts/**/*.sha256
+
+# editor
+.vs/
+*.user
