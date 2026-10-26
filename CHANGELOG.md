@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1 - 2026-10-27
+
+- Right-click a standard title bar or frame to open a window menu with Always on top alongside the app's window commands. Custom title bars retain the Shift+right-click fallback.
+- Preserve checked/disabled system-menu commands and provide access to the original window menu for specialized entries.
+- Removed notification popups for successful pin/unpin and Unpin all actions; errors and explanatory feedback remain available.
+
 ## 1.7.0 - 2026-10-26
 
 - Added accent-colored outlines for pinned windows, with DPI-scaled thickness and visibility/position tracking.

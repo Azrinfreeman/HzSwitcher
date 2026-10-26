@@ -5,11 +5,11 @@ namespace HzSwitcher.Native;
 internal sealed class MouseGesture
 {
     public bool Captured { get; private set; }
-    public bool Process(bool down, bool up, bool injected, bool enabled, bool shift, bool eligible)
+    public bool Process(bool down, bool up, bool injected, bool enabled, bool shift, bool eligible, bool frame = false)
     {
         if (injected) return false;
         if (up && Captured) { Captured = false; return true; }
-        if (down && enabled && shift && eligible) { Captured = true; return true; }
+        if (down && enabled && (shift || frame) && eligible) { Captured = true; return true; }
         return false;
     }
 }
@@ -33,13 +33,13 @@ internal sealed class WindowMouseHook : IDisposable
     }
     private readonly HookProc _callback;
     private readonly Control _ui;
-    private readonly Action<IntPtr, Point> _open;
+    private readonly Action<IntPtr, Point, bool> _open;
     private readonly MouseGesture _gesture = new();
     private IntPtr _hook, _target;
     private Point _point;
-    private bool _enabled;
+    private bool _enabled, _frame;
     public bool Available => _hook != IntPtr.Zero;
-    public WindowMouseHook(Control ui, Action<IntPtr, Point> open) { _ui = ui; _open = open; _callback = Callback; }
+    public WindowMouseHook(Control ui, Action<IntPtr, Point, bool> open) { _ui = ui; _open = open; _callback = Callback; }
     public void SetEnabled(bool enabled)
     {
         _enabled = enabled;
@@ -59,14 +59,16 @@ internal sealed class WindowMouseHook : IDisposable
         var mouse = Marshal.PtrToStructure<MouseData>(data);
         bool down = msg == 0x204, injected = (mouse.Flags & 3) != 0;
         bool shift = (GetAsyncKeyState(0x10) & 0x8000) != 0;
-        IntPtr target = down && !injected && _enabled && shift ? GetAncestor(WindowFromPoint(mouse.Point), 2) : IntPtr.Zero;
-        if (!_gesture.Process(down, !down, injected, _enabled, shift, target != IntPtr.Zero && Eligible(target)))
+        IntPtr target = down && !injected && _enabled ? GetAncestor(WindowFromPoint(mouse.Point), 2) : IntPtr.Zero;
+        bool eligible = target != IntPtr.Zero && Eligible(target);
+        bool frame = eligible && !shift && WindowFrameApi.IsFrameCandidate(target, mouse.Point);
+        if (!_gesture.Process(down, !down, injected, _enabled, shift, eligible, frame))
             return CallNextHookEx(_hook, code, message, data);
-        if (down) { _target = target; _point = mouse.Point; }
+        if (down) { _target = target; _point = mouse.Point; _frame = frame; }
         else
         {
-            var captured = _target; var point = _point;
-            if (_enabled && !_ui.IsDisposed) _ui.BeginInvoke(() => { if (_enabled) _open(captured, point); });
+            var captured = _target; var point = _point; bool frameClick = _frame;
+            if (_enabled && !_ui.IsDisposed) _ui.BeginInvoke(() => { if (_enabled) _open(captured, point, frameClick); });
             if (!_enabled) Unhook();
         }
         return new IntPtr(1);

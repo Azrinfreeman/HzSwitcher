@@ -3,7 +3,10 @@ namespace HzSwitcher.Services;
 internal readonly record struct WindowIdentity(IntPtr Handle, uint ProcessId, long Started);
 internal readonly record struct WindowState(WindowIdentity Identity, bool Topmost);
 internal enum PinStatus { Pinned, Unpinned, Removed, Unchanged, Failed }
-internal readonly record struct PinResult(PinStatus Status, WindowIdentity? Target, string Message, int NativeError = 0, bool RestoredAny = false);
+internal readonly record struct PinResult(PinStatus Status, WindowIdentity? Target, string Message, int NativeError = 0, bool RestoredAny = false)
+{
+    public bool ShowNotification => Status == PinStatus.Failed || (Status == PinStatus.Unchanged && Target.HasValue);
+}
 internal interface IWindowApi : IDisposable
 {
     event Action<IntPtr> Destroyed;

@@ -314,14 +314,25 @@ internal sealed class TrayApp : ApplicationContext
             _alwaysOnTop.Changed += () => _main.RefreshAlwaysOnTop();
             _pinBorders = new AlwaysOnTopBorderService(_alwaysOnTop, _settings, ShowPinMenu);
             _pinSounds = new AlwaysOnTopSoundService();
-            _pinMouse = new HzSwitcher.Native.WindowMouseHook(_ui, (handle, point) =>
+            _pinMouse = new HzSwitcher.Native.WindowMouseHook(_ui, (handle, point, frameClick) =>
             {
                 if (_pinMenu.IsOpen) return;
                 var overlayTarget = _pinBorders.TargetForOverlay(handle);
                 if (overlayTarget.HasValue) { ShowPinMenu(overlayTarget.Value, point); return; }
                 var state = _alwaysOnTop.Inspect(handle);
                 if (state == null) { AlwaysOnTopNotice(new(PinStatus.Failed, null, "This window cannot be pinned.")); return; }
-                ShowPinMenu(state.Value.Identity, point);
+                var target = state.Value.Identity;
+                if (frameClick)
+                {
+                    int? hit = HzSwitcher.Native.WindowFrameApi.HitTest(handle, point);
+                    if (_alwaysOnTop.Inspect(handle)?.Identity != target) return;
+                    if (!hit.HasValue || !HzSwitcher.Native.WindowFrameApi.IsFrameHit(hit.Value))
+                    {
+                        HzSwitcher.Native.WindowFrameApi.ReplayFrameClick(handle, point, hit);
+                        return;
+                    }
+                }
+                ShowPinMenu(target, point, frameClick);
             });
             _pinMouse.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
             _alwaysOnTopFailure = null;
@@ -358,11 +369,13 @@ internal sealed class TrayApp : ApplicationContext
         _main.RefreshAlwaysOnTop();
     }
 
-    private void ShowPinMenu(WindowIdentity target, Point point)
+    private void ShowPinMenu(WindowIdentity target, Point point) => ShowPinMenu(target, point, false);
+
+    private void ShowPinMenu(WindowIdentity target, Point point, bool frameMenu)
     {
         if (!_settings.AlwaysOnTopEnabled || _alwaysOnTop == null) return;
         _pinMenu.Show(target, point, _alwaysOnTop, () => _settings.AlwaysOnTopEnabled,
-            result => AlwaysOnTopNotice(result, true), UnpinAll, () => { ShowMain(); _main.ShowAlwaysOnTopSettings(); });
+            result => AlwaysOnTopNotice(result, true), UnpinAll, () => { ShowMain(); _main.ShowAlwaysOnTopSettings(); }, frameMenu);
     }
 
     internal string AlwaysOnTopStatus
@@ -385,7 +398,7 @@ internal sealed class TrayApp : ApplicationContext
         _pinSounds?.Play(result, userAction && _settings.AlwaysOnTopSound);
         string message = result.Message;
         Log.Write("Always on top: " + message);
-        Balloon("Always on top", message);
+        if (result.ShowNotification) Balloon("Always on top", message);
         _main.RefreshAlwaysOnTop();
     }
 

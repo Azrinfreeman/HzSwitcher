@@ -2,6 +2,12 @@
 
 Status: implemented after user approval. The original design below is retained for reference. Automated build and regression checks cover service transitions, preferences, mouse button pairing, geometry, native overlay behavior and hook lifetime. Manual multi-monitor, application compatibility, audio and session checks remain pending. No version bump or installer rebuild was performed.
 
+## Follow-up: frame menu and quiet success (2026-10-27)
+
+Implemented ordinary right-click on standard non-client title bars/frames. A UI-thread hit test validates the frame after bounded geometry-only capture in the mouse hook. HzSwitcher displays a separate popup populated from the target's system menu plus a checked Always on top action, and forwards selected window commands after identity revalidation. The original menu remains accessible. Client content clicks pass through; custom title bars can use Shift+right-click. No cross-process injection or persistent menu mutation is used.
+
+Successful pin/unpin and Unpin all operations no longer show balloons. Outline and optional sound remain; failures and already-topmost explanations still notify. The design below records the original 1.7.0 proposal and its earlier gesture scope.
+
 ## Goal
 
 Extend the existing Always on top feature with a visible outline around pinned windows, a short sound when pinning/unpinning, and a mouse menu for selecting Always on top. Keep the existing shortcut, ownership rules, Unpin all and graceful-exit cleanup.

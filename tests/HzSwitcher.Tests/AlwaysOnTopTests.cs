@@ -335,7 +335,7 @@ public class AlwaysOnTopTests
             try
             {
                 using var dispatcher = new Control(); _ = dispatcher.Handle;
-                using var hook = new HzSwitcher.Native.WindowMouseHook(dispatcher, (_, _) => { });
+                using var hook = new HzSwitcher.Native.WindowMouseHook(dispatcher, (_, _, _) => { });
                 hook.SetEnabled(true); Assert.True(hook.Available);
                 hook.SetEnabled(false); Assert.False(hook.Available);
                 hook.SetEnabled(true); Assert.True(hook.Available);

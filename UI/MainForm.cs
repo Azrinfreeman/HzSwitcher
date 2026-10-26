@@ -51,7 +51,7 @@ internal sealed class MainForm : Form
     // General page
     private readonly Toggle _pinOutline = new() { Text = "Show outline around pinned windows" };
     private readonly Toggle _pinSound = new() { Text = "Play sound when pinning or unpinning" };
-    private readonly Toggle _pinMouse = new() { Text = "Enable Shift+right-click menu" };
+    private readonly Toggle _pinMouse = new() { Text = "Enable window frame and Shift+right-click menus" };
     private readonly NumberBox _pinThickness = new() { Minimum = 1, Maximum = 8, Value = 3, AccessibleName = "Outline thickness in logical pixels" };
     private readonly Toggle _alwaysOnTop = new() { Text = "Enable always on top" };
     private readonly Label _alwaysOnTopStatus = new() { AutoSize = true, MaximumSize = new Size(BodyWidth, 0), ForeColor = Theme.TextMuted };
@@ -234,7 +234,7 @@ internal sealed class MainForm : Form
         _unpinAll = FlatButton("Unpin all", (_, _) => _app.UnpinAll(), "Restore windows pinned by HzSwitcher");
         pinActions.Controls.Add(_unpinAll);
         pin.Controls.Add(pinActions);
-        page.Controls.Add(Section("Always on top", pin, "Use the shortcut or Shift+right-click a window to pin it. Right-click its outline to unpin. The outline follows the Windows accent color. HzSwitcher must stay running."));
+        page.Controls.Add(Section("Always on top", pin, "Right-click a standard title bar or window frame for Always on top. Use Shift+right-click anywhere for custom title bars. You can also right-click a pinned outline. HzSwitcher must stay running."));
 
         var tools = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
         tools.Controls.Add(FlatButton("Advanced settings…", (_, _) => _app.ShowAdvancedSettings(), "Video/game detection lists"));
