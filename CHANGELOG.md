@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.7.0 - 2026-10-26
+
+- Added accent-colored outlines for pinned windows, with DPI-scaled thickness and visibility/position tracking.
+- Added distinct pin/unpin sound cues and General settings for outlines, thickness, sound and the mouse menu.
+- Added Shift+right-click on a window and right-click on its outline to open a target-specific pin menu.
+- Revalidate menu targets before changing window state and release tracking when another app clears topmost.
+
+## 1.6.0 - 2026-10-26
+
+- Added an optional Always on top feature on General: Ctrl+Alt+T pins/unpins the active window, with an editable shortcut, readiness status and Unpin all.
+- Windows pinned by HzSwitcher are restored on disable or graceful exit. Existing topmost windows are left unchanged; forced termination cannot guarantee cleanup.
+- Shortcut validation rejects multiple primary keys and detects duplicate combinations regardless of modifier order or aliases.
+
 ## 1.5.0 - 2026-10-25
 
 New look and layout.

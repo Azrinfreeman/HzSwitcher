@@ -34,6 +34,7 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
     internal static bool TryParse(string spec, out uint mods, out uint vk)
     {
         mods = 0; vk = 0;
+        if (string.IsNullOrWhiteSpace(spec)) return false;
         foreach (var raw in spec.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
             switch (raw.ToLowerInvariant())
@@ -44,7 +45,9 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
                 case "win": mods |= MOD_WIN; continue;
             }
             string name = raw.Length == 1 && char.IsDigit(raw[0]) ? "D" + raw : raw;
-            if (!Enum.TryParse<Keys>(name, true, out var key)) return false;
+            if (vk != 0 || !Enum.TryParse<Keys>(name, true, out var key) || !Enum.IsDefined(key)
+                || key is Keys.None or Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin
+                || (int)key > 255) return false;
             vk = (uint)key;
         }
         return mods != 0 && vk != 0;

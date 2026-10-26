@@ -2,7 +2,7 @@
 
 A small Windows tray app for switching a monitor's refresh rate and brightness, with an automatic power-saver that drops the rate when you are idle or watching video.
 
-Version 1.5.0. Windows 10 or 11, x64. Built with C# on .NET 10 (Windows Forms). The release exe is self-contained, so no .NET install is needed.
+Version 1.7.0. Windows 10 or 11, x64. Built with C# on .NET 10 (Windows Forms). The release exe is self-contained, so no .NET install is needed.
 
 ## What it does
 
@@ -34,6 +34,18 @@ Settings related to brightness:
 - The window has four pages: **Display** (rate, presets, brightness), **Automation** (power-saver, app profiles), **Shortcuts** (hotkeys) and **General** (notifications, startup, advanced settings, log, exit).
 - The window is dark, uses your Windows accent colour, and has a fixed size that scales with display DPI.
 
+## Always on top
+
+On **General**, turn on **Enable always on top**, then focus another app and press **Ctrl+Alt+T** to pin or unpin its window above ordinary windows. Edit the shortcut through **Edit hotkeys?**. The feature is off by default and needs HzSwitcher running; hiding to the tray keeps it active. The status shows whether the shortcut is available.
+
+Pinned windows show an outline in the Windows accent color and play distinct short sounds when pinned or unpinned. General settings let you switch the outline, sounds and mouse gesture on/off, and choose outline thickness (1?8 logical pixels, scaled for the monitor).
+
+**Shift+right-click** on a window opens the HzSwitcher menu. A normal **right-click on its outline** opens the same menu, with Unpin this window, Unpin all and Always on top settings. Actions use the clicked window even if another window has focus. Ordinary right-click inside an app continues to use that app's menu; HzSwitcher does not add items to other apps' native menus.
+
+You can pin several windows. **Unpin all**, turning the feature off, or **Exit app** restores windows pinned by HzSwitcher. Windows already on top are left unchanged. Some protected or elevated windows cannot be controlled, and other topmost windows or exclusive fullscreen apps can cover a pinned window.
+
+Cleanup is best effort. If HzSwitcher crashes or is force-closed, a pinned app may stay on top; close and reopen that app to recover. Pinned windows are not restored across restarts. If the shortcut conflicts with PowerToys or another app, choose another combination. Pin/unpin notifications are independent of auto-switch notifications.
+
 ## Files and settings
 
 Everything is stored per user in `%APPDATA%\HzSwitcher`:
@@ -59,13 +71,13 @@ dotnet test tests\HzSwitcher.Tests
 # self-contained single-file release
 dotnet publish -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o artifacts\1.5.0
+  -p:EnableCompressionInSingleFile=true -o artifacts\1.7.0
 ```
 
 The installer is built with [Inno Setup 6](https://jrsoftware.org/isinfo.php) from the published exe:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.5.0 artifacts\installer\HzSwitcher.iss
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.7.0 artifacts\installer\HzSwitcher.iss
 ```
 
 It writes `artifacts\installer\HzSwitcher-Setup-<version>.exe`. The installer is unsigned, so Windows SmartScreen may warn about it.

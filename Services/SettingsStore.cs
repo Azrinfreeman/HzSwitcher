@@ -6,7 +6,7 @@ public class HotkeyBinding
 {
     /// <summary>For example "Ctrl+Alt+1".</summary>
     public string Keys { get; set; } = "";
-    /// <summary>SetHz, SetMax, Preset, Cycle or ToggleAuto.</summary>
+    /// <summary>SetHz, SetMax, Preset, Cycle, ToggleAuto or ToggleAlwaysOnTop.</summary>
     public string Action { get; set; } = "SetHz";
     public int Hz { get; set; }
     /// <summary>Preset name when Action is "Preset".</summary>
@@ -34,6 +34,13 @@ public class Settings
     public int SettingsVersion { get; set; } = 2;
     /// <summary>Device name of the monitor to control, e.g. \\.\DISPLAY1. Empty = primary.</summary>
     public string MonitorDevice { get; set; } = "";
+    public bool AlwaysOnTopEnabled { get; set; }
+    public bool AlwaysOnTopOutline { get; set; } = true;
+    private int _outlineThickness = 3;
+    public int AlwaysOnTopOutlineThickness { get => _outlineThickness; set => _outlineThickness = Math.Clamp(value, 1, 8); }
+    public bool AlwaysOnTopSound { get; set; } = true;
+    public bool AlwaysOnTopMouseMenu { get; set; } = true;
+    public bool AlwaysOnTopShortcutInitialized { get; set; }
     public bool ShowAllRates { get; set; }
     public bool NotifyOnAutoSwitch { get; set; } = true;
     /// <summary>Last main-window bounds (0 width = never saved).</summary>

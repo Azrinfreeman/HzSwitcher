@@ -1,7 +1,7 @@
 ; Builds HzSwitcher-Setup-<version>.exe (next to this file) from ..\<version>\HzSwitcher.exe.
-; Compile with: ISCC.exe /DAppVersion=1.5.0 HzSwitcher.iss
+; Compile with: ISCC.exe /DAppVersion=1.6.0 HzSwitcher.iss
 #define AppName "HzSwitcher"
-; build.ps1 passes /DAppVersion=<version from the csproj>
+; Pass /DAppVersion=<version from the csproj> when compiling.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -33,7 +33,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Name: "startup"; Description: "Start HzSwitcher with Windows (minimized to tray)"; Flags: unchecked
 
 [Files]
-Source: "..\1.5.0\HzSwitcher.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\{#AppVersion}\HzSwitcher.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

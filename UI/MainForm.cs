@@ -49,6 +49,13 @@ internal sealed class MainForm : Form
     private readonly Label _hotkeys = new() { AutoSize = true, ForeColor = Theme.Text, MaximumSize = new Size(BodyWidth, 0) };
 
     // General page
+    private readonly Toggle _pinOutline = new() { Text = "Show outline around pinned windows" };
+    private readonly Toggle _pinSound = new() { Text = "Play sound when pinning or unpinning" };
+    private readonly Toggle _pinMouse = new() { Text = "Enable Shift+right-click menu" };
+    private readonly NumberBox _pinThickness = new() { Minimum = 1, Maximum = 8, Value = 3, AccessibleName = "Outline thickness in logical pixels" };
+    private readonly Toggle _alwaysOnTop = new() { Text = "Enable always on top" };
+    private readonly Label _alwaysOnTopStatus = new() { AutoSize = true, MaximumSize = new Size(BodyWidth, 0), ForeColor = Theme.TextMuted };
+    private Button _unpinAll;
     private readonly Toggle _notify = new() { Text = "Notify me when it switches automatically" };
     private readonly Toggle _startup = new() { Text = "Start with Windows (minimized to tray)" };
     private readonly Toggle _briRestore = new() { Text = "Restore each monitor's brightness at startup" };
@@ -213,6 +220,22 @@ internal sealed class MainForm : Form
         foreach (var t in new[] { _notify, _startup, _briRestore }) { t.Margin = new Padding(0, 0, 0, 8); behavior.Controls.Add(t); }
         page.Controls.Add(Section("Behavior", behavior));
 
+        var pin = Stack();
+        pin.Controls.Add(_alwaysOnTop);
+        pin.Controls.Add(_alwaysOnTopStatus);
+        foreach (var toggle in new[] { _pinOutline, _pinSound, _pinMouse })
+        { toggle.Margin = new Padding(0, 6, 0, 6); pin.Controls.Add(toggle); }
+        var thicknessRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        thicknessRow.Controls.Add(new Label { Text = "Outline thickness (1-8):", AutoSize = true, Margin = new Padding(0, 6, 10, 0) });
+        thicknessRow.Controls.Add(_pinThickness);
+        pin.Controls.Add(thicknessRow);
+        var pinActions = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
+        pinActions.Controls.Add(FlatButton("Edit hotkeys...", (_, _) => _app.EditHotkeys(), "Choose the pin/unpin shortcut"));
+        _unpinAll = FlatButton("Unpin all", (_, _) => _app.UnpinAll(), "Restore windows pinned by HzSwitcher");
+        pinActions.Controls.Add(_unpinAll);
+        pin.Controls.Add(pinActions);
+        page.Controls.Add(Section("Always on top", pin, "Use the shortcut or Shift+right-click a window to pin it. Right-click its outline to unpin. The outline follows the Windows accent color. HzSwitcher must stay running."));
+
         var tools = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
         tools.Controls.Add(FlatButton("Advanced settings…", (_, _) => _app.ShowAdvancedSettings(), "Video/game detection lists"));
         tools.Controls.Add(FlatButton("Open log", (_, _) => _app.OpenLog(), null));
@@ -278,6 +301,11 @@ internal sealed class MainForm : Form
         };
         _profilesOn.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.ProfilesEnabled = _profilesOn.Checked; _app.SaveSettings(); } };
         _notify.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.NotifyOnAutoSwitch = _notify.Checked; _app.SaveSettings(); } };
+        _alwaysOnTop.CheckedChanged += (_, _) => { if (!_loading) _app.SetAlwaysOnTop(_alwaysOnTop.Checked); };
+        _pinOutline.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutline = _pinOutline.Checked; _app.UpdatePinPreferences(); } };
+        _pinSound.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopSound = _pinSound.Checked; _app.UpdatePinPreferences(); } };
+        _pinMouse.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopMouseMenu = _pinMouse.Checked; _app.UpdatePinPreferences(); } };
+        _pinThickness.ValueChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutlineThickness = _pinThickness.Value; _app.UpdatePinPreferences(); } };
         _startup.CheckedChanged += (_, _) => { if (!_loading) _app.SetStartup(_startup.Checked); };
     }
 
@@ -391,6 +419,12 @@ internal sealed class MainForm : Form
                 : string.Join(", ", s.Profiles.Where(p => p.Enabled).Take(6).Select(p => $"{Match.Normalize(p.Process)} → {(p.Hz <= 0 ? "highest" : p.Hz + " Hz")}"))
                   + (active > 6 ? $" (+{active - 6} more)" : "");
             _hotkeys.Text = s.Hotkeys.Count == 0 ? "No hotkeys set." : string.Join("\n", s.Hotkeys.Select(HotkeyText));
+            _alwaysOnTop.Checked = s.AlwaysOnTopEnabled;
+            _pinOutline.Checked = s.AlwaysOnTopOutline;
+            _pinSound.Checked = s.AlwaysOnTopSound;
+            _pinMouse.Checked = s.AlwaysOnTopMouseMenu;
+            _pinThickness.Value = s.AlwaysOnTopOutlineThickness;
+            RefreshAlwaysOnTop();
             _notify.Checked = s.NotifyOnAutoSwitch;
             _startup.Checked = _app.IsStartupEnabled();
         }
@@ -430,6 +464,14 @@ internal sealed class MainForm : Form
         RefreshBrightness();
     }
 
+    internal void ShowAlwaysOnTopSettings() => _rail.SelectedIndex = 3;
+
+    internal void RefreshAlwaysOnTop()
+    {
+        _alwaysOnTopStatus.Text = _app.AlwaysOnTopStatus;
+        if (_unpinAll != null) _unpinAll.Enabled = _app.HasPinnedWindows;
+    }
+
     private void UpdateStatus()
     {
         _status.Text = _app.Auto.Status;
@@ -450,6 +492,7 @@ internal sealed class MainForm : Form
         "SetMax" => $"{b.Keys}   →   highest rate",
         "Preset" => $"{b.Keys}   →   preset “{b.Preset}”",
         "Cycle" => $"{b.Keys}   →   next preset",
+        "ToggleAlwaysOnTop" => $"{b.Keys}   ->   toggle active window always on top",
         "ToggleAuto" => $"{b.Keys}   →   toggle auto power-saver",
         _ => b.Keys,
     };

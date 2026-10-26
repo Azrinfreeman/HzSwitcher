@@ -13,6 +13,7 @@ internal sealed class HotkeysForm : DialogShell
         ("SetMax", "Highest refresh rate"),
         ("Cycle", "Next preset"),
         ("ToggleAuto", "Toggle auto power-saver"),
+        ("ToggleAlwaysOnTop", "Toggle active window always on top"),
     };
 
     private readonly Settings _s;
@@ -114,7 +115,12 @@ internal sealed class HotkeysForm : DialogShell
             var b = new HotkeyBinding { Keys = r.Keys.Text, Action = code };
             if (code == "Preset") b.Preset = r.Param.SelectedItem as string ?? "";
             if (code == "SetHz" && r.Param.SelectedItem is string t) b.Hz = int.Parse(t.Split(' ')[0]);
-            if (list.Any(x => x.Keys.Equals(b.Keys, StringComparison.OrdinalIgnoreCase)))
+            if (!HotkeyWindow.TryParse(b.Keys, out uint mods, out uint key))
+            {
+                MessageBox.Show(this, $"Invalid shortcut: {b.Keys}", "Hotkeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+            if (list.Any(x => HotkeyWindow.TryParse(x.Keys, out uint m, out uint k) && m == mods && k == key))
             {
                 MessageBox.Show(this, $"{b.Keys} is used twice.", "Hotkeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;

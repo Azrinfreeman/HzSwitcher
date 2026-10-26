@@ -21,6 +21,13 @@ internal sealed class TrayApp : ApplicationContext
     private readonly MediaDetector _media;
     private readonly AutoSaverService _auto;
     private readonly ProfileService _profiles;
+    private AlwaysOnTopService _alwaysOnTop;
+    private string _alwaysOnTopFailure;
+    private AlwaysOnTopBorderService _pinBorders;
+    private AlwaysOnTopSoundService _pinSounds;
+    private HzSwitcher.Native.WindowMouseHook _pinMouse;
+    private readonly WindowPinMenu _pinMenu = new();
+    private readonly HashSet<int> _registeredHotkeys = new();
     private readonly HotkeyWindow _hotkeys = new();
     private readonly Control _ui = new();
     private readonly NotifyIcon _tray = new() { Visible = false };
@@ -60,6 +67,7 @@ internal sealed class TrayApp : ApplicationContext
         _profiles.Notice += OnNotice;
         _profiles.Changed += RefreshTray;
         _main = new MainForm(this);
+        if (_settings.AlwaysOnTopEnabled) InitializeAlwaysOnTop();
 
         var menu = new ContextMenuStrip();
         ToolStripManager.Renderer = new ThemedMenuRenderer();
@@ -263,15 +271,20 @@ internal sealed class TrayApp : ApplicationContext
     internal List<string> ApplyHotkeys()
     {
         _hotkeys.UnregisterAll();
+        _registeredHotkeys.Clear();
         var failed = new List<string>();
         for (int i = 0; i < _settings.Hotkeys.Count; i++)
-            if (!_hotkeys.Register(i, _settings.Hotkeys[i].Keys)) failed.Add(_settings.Hotkeys[i].Keys);
+        {
+            if (_settings.Hotkeys[i].Action == "ToggleAlwaysOnTop" && (!_settings.AlwaysOnTopEnabled || _alwaysOnTop == null)) continue;
+            if (_hotkeys.Register(i, _settings.Hotkeys[i].Keys)) _registeredHotkeys.Add(i);
+            else failed.Add(_settings.Hotkeys[i].Keys);
+        }
         return failed;
     }
 
     private void OnHotkey(int id)
     {
-        if (id < 0 || id >= _settings.Hotkeys.Count) return;
+        if (id < 0 || id >= _settings.Hotkeys.Count || !_registeredHotkeys.Contains(id)) return;
         var b = _settings.Hotkeys[id];
         switch (b.Action)
         {
@@ -285,7 +298,95 @@ internal sealed class TrayApp : ApplicationContext
                 }
             case "Cycle": CyclePreset(); break;
             case "ToggleAuto": ToggleAuto(); break;
+            case "ToggleAlwaysOnTop":
+                if (_settings.AlwaysOnTopEnabled && _alwaysOnTop != null)
+                    AlwaysOnTopNotice(_alwaysOnTop.ToggleForeground(), true);
+                break;
         }
+    }
+
+    private void InitializeAlwaysOnTop()
+    {
+        if (_alwaysOnTop != null) return;
+        try
+        {
+            _alwaysOnTop = new AlwaysOnTopService(new HzSwitcher.Native.WindowApi());
+            _alwaysOnTop.Changed += () => _main.RefreshAlwaysOnTop();
+            _pinBorders = new AlwaysOnTopBorderService(_alwaysOnTop, _settings, ShowPinMenu);
+            _pinSounds = new AlwaysOnTopSoundService();
+            _pinMouse = new HzSwitcher.Native.WindowMouseHook(_ui, (handle, point) =>
+            {
+                if (_pinMenu.IsOpen) return;
+                var overlayTarget = _pinBorders.TargetForOverlay(handle);
+                if (overlayTarget.HasValue) { ShowPinMenu(overlayTarget.Value, point); return; }
+                var state = _alwaysOnTop.Inspect(handle);
+                if (state == null) { AlwaysOnTopNotice(new(PinStatus.Failed, null, "This window cannot be pinned.")); return; }
+                ShowPinMenu(state.Value.Identity, point);
+            });
+            _pinMouse.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
+            _alwaysOnTopFailure = null;
+        }
+        catch (Exception e) { _alwaysOnTopFailure = "Unavailable: window tracking failed."; Log.Write(e.ToString()); }
+    }
+
+    internal void SetAlwaysOnTop(bool enabled)
+    {
+        _settings.AlwaysOnTopEnabled = enabled;
+        if (enabled)
+        {
+            InitializeAlwaysOnTop();
+            if (!_settings.AlwaysOnTopShortcutInitialized)
+            {
+                if (!_settings.Hotkeys.Any(b => b.Action == "ToggleAlwaysOnTop"))
+                    _settings.Hotkeys.Add(new HotkeyBinding { Keys = "Ctrl+Alt+T", Action = "ToggleAlwaysOnTop" });
+                _settings.AlwaysOnTopShortcutInitialized = true;
+            }
+        }
+        else if (_alwaysOnTop != null) AlwaysOnTopNotice(_alwaysOnTop.RestoreAll());
+        UpdatePinPreferences();
+        var failed = ApplyHotkeys();
+        if (failed.Count > 0) Balloon("Hotkey unavailable", "Could not register: " + string.Join(", ", failed));
+        _main.RefreshAll();
+    }
+
+    internal void UpdatePinPreferences()
+    {
+        _pinMenu.Close();
+        _pinMouse?.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
+        _pinBorders?.Refresh();
+        SaveSettings();
+        _main.RefreshAlwaysOnTop();
+    }
+
+    private void ShowPinMenu(WindowIdentity target, Point point)
+    {
+        if (!_settings.AlwaysOnTopEnabled || _alwaysOnTop == null) return;
+        _pinMenu.Show(target, point, _alwaysOnTop, () => _settings.AlwaysOnTopEnabled,
+            result => AlwaysOnTopNotice(result, true), UnpinAll, () => { ShowMain(); _main.ShowAlwaysOnTopSettings(); });
+    }
+
+    internal string AlwaysOnTopStatus
+    {
+        get
+        {
+            var bindings = _settings.Hotkeys.Select((b, i) => (b, i)).Where(x => x.b.Action == "ToggleAlwaysOnTop").ToArray();
+            string status = !_settings.AlwaysOnTopEnabled ? "Disabled" : _alwaysOnTopFailure ??
+                (bindings.Length == 0 ? "No shortcut assigned" : bindings.All(x => _registeredHotkeys.Contains(x.i)) ? "Ready" : "Shortcut unavailable");
+            return status + (_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu && _pinMouse?.Available != true ? " / Mouse menu unavailable" : "") +
+                (_pinBorders?.Available == false ? " / Outline unavailable" : "") + " - " + (_alwaysOnTop?.Count ?? 0) + " pinned" +
+                (bindings.Length == 0 ? "" : "\nShortcut: " + string.Join(", ", bindings.Select(x => x.b.Keys)));
+        }
+    }
+
+    internal bool HasPinnedWindows => (_alwaysOnTop?.Count ?? 0) > 0;
+    internal void UnpinAll() { if (_alwaysOnTop != null) AlwaysOnTopNotice(_alwaysOnTop.RestoreAll(), true); }
+    private void AlwaysOnTopNotice(PinResult result, bool userAction = false)
+    {
+        _pinSounds?.Play(result, userAction && _settings.AlwaysOnTopSound);
+        string message = result.Message;
+        Log.Write("Always on top: " + message);
+        Balloon("Always on top", message);
+        _main.RefreshAlwaysOnTop();
     }
 
     // ---------- tray UI ----------
@@ -515,6 +616,15 @@ internal sealed class TrayApp : ApplicationContext
 
     internal void ExitApp()
     {
+        _pinMouse?.Dispose();
+        _pinMenu.Dispose();
+        _pinBorders?.Dispose();
+        _pinSounds?.Dispose();
+        if (_alwaysOnTop != null)
+        {
+            Log.Write("Always on top exit: " + _alwaysOnTop.RestoreAll().Message);
+            _alwaysOnTop.Dispose();
+        }
         _main.AllowClose = true;
         _main.Close();
         _auto.ExitSaver("exit");   // don't leave the monitor stuck at the saver rate
