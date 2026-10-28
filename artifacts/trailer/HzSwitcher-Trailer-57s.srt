@@ -1,0 +1,67 @@
+1
+00:00:00,250 --> 00:00:01,675
+Your screen.
+
+2
+00:00:01,675 --> 00:00:03,099
+Your rules.
+
+3
+00:00:04,250 --> 00:00:05,062
+Meet HzSwitcher.
+
+4
+00:00:05,062 --> 00:00:09,933
+Change your refresh rate in a click, right from your Windows tray.
+
+5
+00:00:11,250 --> 00:00:15,020
+Choose a preset for gaming, work, or winding down.
+
+6
+00:00:15,020 --> 00:00:17,534
+Or switch instantly with a shortcut.
+
+7
+00:00:18,250 --> 00:00:23,058
+Set a refresh rate for each app, and let your screen adapt as you switch tasks.
+
+8
+00:00:26,250 --> 00:00:28,661
+Adjust brightness without digging through menus.
+
+9
+00:00:28,661 --> 00:00:31,474
+Choose the display you want to control.
+
+10
+00:00:33,250 --> 00:00:37,281
+Step away, and the power saver lowers the refresh rate.
+
+11
+00:00:37,281 --> 00:00:40,103
+Return, and your previous setting comes back.
+
+12
+00:00:41,250 --> 00:00:42,873
+Keep what matters in view.
+
+13
+00:00:42,873 --> 00:00:47,418
+Enable Always on top, then right click a window's title bar to pin it.
+
+14
+00:00:49,250 --> 00:00:49,910
+HzSwitcher.
+
+15
+00:00:49,910 --> 00:00:51,230
+Your screen.
+
+16
+00:00:51,230 --> 00:00:52,549
+Your rules.
+
+17
+00:00:52,549 --> 00:00:55,189
+Get it on GitHub.

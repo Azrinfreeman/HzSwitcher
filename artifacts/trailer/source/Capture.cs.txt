@@ -1,0 +1,115 @@
+using System.Reflection;
+using System.Drawing.Imaging;
+using System.Text.Json;
+using HzSwitcher.Services;
+using HzSwitcher.UI;
+using HzSwitcher.UI.Controls;
+
+namespace HzSwitcher;
+internal sealed class DemoDisplay
+{
+    public int Rate = 144;
+    public string Device = "DISPLAY1";
+    public int GetCurrentHz() => Rate;
+    public List<int> GetSupportedHz() => [60, 120, 144];
+    public List<MonitorInfo> GetMonitors() => [new("DISPLAY1", "Display 1 - 2560 x 1440", true), new("DISPLAY2", "Display 2 - 1920 x 1080", false)];
+    public string CurrentModeText() => "2560 x 1440";
+}
+internal sealed class DemoBrightness
+{
+    public event Action Changed;
+    public int Level = 70;
+    public bool IsSupported => true;
+    public BrightnessMode Mode => BrightnessMode.Hardware;
+    public string Key => "Demo display";
+    public int Get() => Level;
+    public void Change(int level) { Level = level; Changed?.Invoke(); }
+}
+internal sealed class DemoAuto { public SaverState State = SaverState.Active; public int RestoreHz = 144; public string Status = "Watching for idle activity"; public double Progress = .35; }
+internal sealed class DemoProfile { public string ActiveProcess; }
+internal sealed class TrayApp
+{
+    public Settings Settings = new() { AutoEnabled = true, ProfilesEnabled = true, IdleMinutes = 10, RestoreSeconds = 5, AlwaysOnTopEnabled = true,
+        Profiles = [new() { Process = "notepad", Hz = 60 }, new() { Process = "game", Hz = 0 }] };
+    public DemoDisplay Display = new(); public DemoBrightness Brightness = new(); public DemoAuto Auto = new(); public DemoProfile Profiles = new();
+    public MainForm Main;
+    public string AlwaysOnTopStatus => "Ready - 0 pinned\nShortcut: Ctrl+Alt+T";
+    public bool HasPinnedWindows => false;
+    public List<int> VisibleRates() => Display.GetSupportedHz();
+    public int ResolvePreset(Preset p) => ModeMath.Resolve(Display.GetSupportedHz(), p.Hz);
+    public void ApplyPreset(Preset p) => SetHz(ResolvePreset(p));
+    public void SetHz(int hz) { Display.Rate = hz; Main?.RefreshAll(); }
+    public void SetBrightness(int n) => Brightness.Change(n);
+    public void SelectMonitor(string s) { Display.Device = s; Main?.RefreshAll(); }
+    public bool IsStartupEnabled() => false;
+    public void SaveSettings() { }
+    public void SetStartup(bool enabled) { }
+    public void SetAlwaysOnTop(bool enabled) { Settings.AlwaysOnTopEnabled = enabled; }
+    public void UpdatePinPreferences() { }
+    public void ExitSaverNow() { }
+    public void CommitBrightness() { }
+    public void EditPresets() { }
+    public void EditProfiles() { }
+    public void EditHotkeys() { }
+    public void UnpinAll() { }
+    public void ShowAdvancedSettings() { }
+    public void OpenLog() { }
+    public void ExitApp() { }
+    public void Hint(string a, string b) { }
+}
+internal static class Capture
+{
+    static string Output;
+    static readonly Dictionary<string, object> Layout = new();
+    static T Field<T>(object o, string n) => (T)o.GetType().GetField(n, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(o);
+    static void Save(Control c, string name)
+    {
+        c.Refresh(); Application.DoEvents();
+        using var bmp = new Bitmap(c.Width, c.Height);
+        c.DrawToBitmap(bmp, new Rectangle(Point.Empty, c.Size));
+        bmp.Save(Path.Combine(Output, name + ".png"), ImageFormat.Png);
+    }
+    static void Page(MainForm f, int n) { Field<NavRail>(f, "_rail").SelectedIndex = n; f.RefreshAll(); Application.DoEvents(); }
+    [STAThread] static void Main(string[] args)
+    {
+        Output = args[0]; Directory.CreateDirectory(Output);
+        Log.Dir = Path.Combine(Output, "demo-settings");
+        Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
+        Application.EnableVisualStyles();
+        var app = new TrayApp(); using var main = new MainForm(app); app.Main = main;
+        main.StartPosition = FormStartPosition.Manual; main.Location = new Point(-20000, -20000);
+        main.Show(); Page(main, 0);
+        Save(main, "display144");
+        app.SetHz(60); Save(main, "display60");
+        app.SetHz(120); Save(main, "display120");
+        app.SetHz(144);
+        app.Brightness.Change(40); Save(main, "brightness40");
+        app.Brightness.Change(70);
+        Page(main, 1); Save(main, "automation");
+        using (var profiles = new ProfilesForm(app.Settings, app.Display.GetSupportedHz()))
+        { profiles.StartPosition = FormStartPosition.Manual; profiles.Location = new Point(-20000,-20000); profiles.Show(); Save(profiles, "profiles"); profiles.Hide(); }
+        Page(main,0); app.Profiles.ActiveProcess = "notepad"; app.SetHz(60); Save(main, "profileactive"); app.Profiles.ActiveProcess = null;
+        app.Auto.State = SaverState.Saver; app.Auto.Status = "Power saver active"; app.Display.Rate = 60; main.RefreshAll(); Save(main, "saver");
+        app.Auto.State = SaverState.Active; app.Auto.Status = "Watching for idle activity"; app.Display.Rate = 144; main.RefreshAll(); Save(main,"restored");
+        Page(main,2); Save(main,"shortcuts");
+        Page(main,3); Save(main,"general");
+        var pages = Field<List<FlowLayoutPanel>>(main,"_pages");
+        // Export individual real production controls, avoiding unreadable full-window shots.
+        Page(main,0);
+        foreach (var pair in new[] { ("_presets","presets"), ("_rates","rates"), ("_bri","brightness"), ("_monitor","monitors") })
+            Save(Field<Control>(main,pair.Item1),pair.Item2);
+        var tray = new ContextMenuStrip { BackColor = Theme.Surface, ForeColor = Theme.Text, Renderer = new ThemedMenuRenderer(), Font = new Font("Segoe UI",10) };
+        tray.Items.Add("HzSwitcher"); tray.Items.Add(new ToolStripSeparator());
+        tray.Items.Add("Gaming  -  144 Hz"); tray.Items.Add("Balanced  -  120 Hz"); tray.Items.Add("Battery saver  -  60 Hz");
+        tray.Items.Add(new ToolStripSeparator()); tray.Items.Add("Refresh rate"); tray.Items.Add("Brightness"); tray.Items.Add("Auto power-saver");
+        tray.Show(new Point(-18000,-18000)); Save(tray,"traydemo"); tray.Close(); tray.Dispose();
+        using var target = new Form { Text = "Project notes", FormBorderStyle = FormBorderStyle.Sizable, StartPosition = FormStartPosition.Manual, Location = new(-20000,-20000), ClientSize = new(520,340) };
+        Theme.Apply(target); target.Controls.Add(new Label { Text = "PROJECT NOTES\n\nKeep the details in view.\n\n01   Check the reference\n02   Make your next move\n03   Stay in your flow", Font = new Font("Segoe UI",16), AutoSize = false, Dock = DockStyle.Fill, Padding = new Padding(24), ForeColor = Theme.Text }); target.Show(); Save(target,"notes");
+        using var api = new HzSwitcher.Native.WindowApi(); using var pins = new AlwaysOnTopService(api); using var menu = new WindowPinMenu();
+        var identity = api.Inspect(target.Handle).Value.Identity;
+        var popup = menu.Build(identity,Point.Empty,pins,()=>true,_=>{},()=>{},()=>{},true);
+        popup.Show(new Point(-18000,-18000)); Save(popup,"pinmenu"); popup.Close();
+        main.AllowClose = true; main.Hide();
+        Console.WriteLine("Captured production UI with simulated display state; no hardware or personal settings were changed.");
+    }
+}

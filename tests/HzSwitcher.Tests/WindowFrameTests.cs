@@ -146,11 +146,57 @@ public class WindowFrameTests
                 Assert.Equal(PinStatus.Unpinned, results.Last().Status);
                 Assert.False(results.Last().ShowNotification);
             });
+            // Exercise the actual handoff, including ToolStrip capture/focus cleanup.
+            try
+            {
+                OnSta(() =>
+                {
+                    using var pins = new AlwaysOnTopService(new WindowApi());
+                    using var presenter = new WindowPinMenu();
+                    var results = new List<PinResult>();
+                    var identity = pins.Inspect(hwnd).Value.Identity;
+                    var menu = presenter.Build(identity, new(-29999, -29900), pins, () => true,
+                        results.Add, () => { }, () => { }, frameMenu: true);
+                    menu.Show(new Point(20, 20));
+                    Assert.True(menu.Visible);
+                    menu.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "Original window menu").PerformClick();
+                    Assert.False(menu.Visible);
+                    var timeout = Stopwatch.StartNew();
+                    while (!NativeMenuOpen(hwnd) && timeout.Elapsed < TimeSpan.FromSeconds(3))
+                    {
+                        Application.DoEvents();
+                        Thread.Sleep(10);
+                    }
+                    Assert.Empty(results);
+                    Assert.True(NativeMenuOpen(hwnd), "The original native window menu never entered menu mode");
+                });
+            }
+            finally { CancelNativeMenu(hwnd); }
             Assert.True(WindowFrameApi.Execute(hwnd, 0xF060));
             Assert.True(child.WaitForExit(5000), "Close command did not reach the helper");
         }
         finally { if (!child.HasExited) { child.Kill(); child.WaitForExit(5000); } }
     }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int Size; public uint Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public int Left, Top, Right, Bottom;
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+    private static bool NativeMenuOpen(IntPtr hwnd)
+    {
+        var info = new GuiThreadInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<GuiThreadInfo>() };
+        return GetGUIThreadInfo(GetWindowThreadProcessId(hwnd, out _), ref info) && (info.Flags & 0x14) != 0 && info.MenuOwner == hwnd;
+    }
+    private static void CancelNativeMenu(IntPtr hwnd) => PostMessage(hwnd, 0x1F, IntPtr.Zero, IntPtr.Zero);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetSystemMenu(IntPtr hwnd, bool revert);

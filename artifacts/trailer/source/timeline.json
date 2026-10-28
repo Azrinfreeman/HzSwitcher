@@ -1,0 +1,10 @@
+[
+ {"start":0,"end":4,"title":"Your screen.\nYour rules.","voice":"Your screen. Your rules."},
+ {"start":4,"end":11,"title":"One click.\nA different pace.","voice":"Meet Hertz Switcher. Change your refresh rate in a click, right from your Windows tray."},
+ {"start":11,"end":18,"title":"Find your\nflow state.","voice":"Choose a preset for gaming, work, or winding down. Or switch instantly with a shortcut."},
+ {"start":18,"end":26,"title":"Every app.\nIts own rhythm.","voice":"Set a refresh rate for each app, and let your screen adapt as you switch tasks."},
+ {"start":26,"end":33,"title":"Set the mood.\nKeep the focus.","voice":"Adjust brightness without digging through menus. Choose the display you want to control."},
+ {"start":33,"end":41,"title":"Step away.\nEase down.","voice":"Step away, and the power saver lowers the refresh rate. Return, and your previous setting comes back."},
+ {"start":41,"end":49,"title":"Keep what\nmatters on top.","voice":"Keep what matters in view. Enable Always on top, then right click a window's title bar to pin it."},
+ {"start":49,"end":57,"title":"Your screen.\nYour rules.","voice":"Hertz Switcher. Your screen. Your rules. Get it on GitHub."}
+]

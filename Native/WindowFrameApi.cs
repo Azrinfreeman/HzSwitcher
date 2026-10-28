@@ -14,6 +14,7 @@ internal static class WindowFrameApi
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam, uint flags, uint timeout, out UIntPtr result);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr GetSystemMenu(IntPtr hwnd, bool revert);
     [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] private static extern uint GetMenuItemID(IntPtr menu, int position);
@@ -41,11 +42,17 @@ internal static class WindowFrameApi
     }
     public static void ReplayFrameClick(IntPtr hwnd, Point point, int? hit)
     {
-        if (!hit.HasValue) { ShowOriginalMenu(hwnd, point); return; }
+        if (!hit.HasValue) { ShowOriginalMenu(hwnd); return; }
         PostMessage(hwnd, 0xA4, new IntPtr(hit.Value), PackPoint(point));
         PostMessage(hwnd, 0xA5, new IntPtr(hit.Value), PackPoint(point));
     }
-    public static bool ShowOriginalMenu(IntPtr hwnd, Point point) => PostMessage(hwnd, 0x7B, hwnd, PackPoint(point));
+    public static bool ShowOriginalMenu(IntPtr hwnd)
+    {
+        // WM_CONTEXTMENU is ignored by the default procedure outside the caption (e.g. resize edges).
+        // Ask for the system menu directly, after the HzSwitcher popup has released menu mode.
+        SetForegroundWindow(hwnd);
+        return PostMessage(hwnd, 0x112, new IntPtr(0xF100), new IntPtr(' ')); // SC_KEYMENU: native Alt+Space menu
+    }
     public static bool Execute(IntPtr hwnd, uint command) => PostMessage(hwnd, 0x112, new IntPtr(command), IntPtr.Zero);
     public static WindowMenuCommand[] ReadCommands(IntPtr hwnd)
     {

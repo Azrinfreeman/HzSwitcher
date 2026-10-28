@@ -23,6 +23,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ProfileService _profiles;
     private AlwaysOnTopService _alwaysOnTop;
     private string _alwaysOnTopFailure;
+    private WindowPinInteractionGuard _pinGuard;
     private AlwaysOnTopBorderService _pinBorders;
     private AlwaysOnTopSoundService _pinSounds;
     private HzSwitcher.Native.WindowMouseHook _pinMouse;
@@ -311,12 +312,22 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             _alwaysOnTop = new AlwaysOnTopService(new HzSwitcher.Native.WindowApi());
-            _alwaysOnTop.Changed += () => _main.RefreshAlwaysOnTop();
-            _pinBorders = new AlwaysOnTopBorderService(_alwaysOnTop, _settings, ShowPinMenu);
+            _alwaysOnTop.Changed += () =>
+            {
+                _pinGuard?.SetActive(_settings.AlwaysOnTopEnabled || _alwaysOnTop.Count > 0);
+                _main.RefreshAlwaysOnTop();
+            };
+            _pinGuard = new WindowPinInteractionGuard(_settings, _ui);
+            _pinBorders = new AlwaysOnTopBorderService(_alwaysOnTop, _settings, ShowPinMenu, () => _pinGuard.Protected);
+            _pinGuard.Changed += () =>
+            {
+                if (_pinGuard.Protected) { _pinMouse?.CancelPendingGesture(); _pinMenu.Close(); }
+                _pinBorders.Refresh();
+            };
             _pinSounds = new AlwaysOnTopSoundService();
             _pinMouse = new HzSwitcher.Native.WindowMouseHook(_ui, (handle, point, frameClick) =>
             {
-                if (_pinMenu.IsOpen) return;
+                if (!_pinGuard.Revalidate() || _pinMenu.IsOpen) return;
                 var overlayTarget = _pinBorders.TargetForOverlay(handle);
                 if (overlayTarget.HasValue) { ShowPinMenu(overlayTarget.Value, point); return; }
                 var state = _alwaysOnTop.Inspect(handle);
@@ -328,12 +339,12 @@ internal sealed class TrayApp : ApplicationContext
                     if (_alwaysOnTop.Inspect(handle)?.Identity != target) return;
                     if (!hit.HasValue || !HzSwitcher.Native.WindowFrameApi.IsFrameHit(hit.Value))
                     {
-                        HzSwitcher.Native.WindowFrameApi.ReplayFrameClick(handle, point, hit);
+                        if (_pinGuard.Revalidate()) HzSwitcher.Native.WindowFrameApi.ReplayFrameClick(handle, point, hit);
                         return;
                     }
                 }
                 ShowPinMenu(target, point, frameClick);
-            });
+            }, _pinGuard.CanUseMouseMenu);
             _pinMouse.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
             _alwaysOnTopFailure = null;
         }
@@ -363,6 +374,7 @@ internal sealed class TrayApp : ApplicationContext
     internal void UpdatePinPreferences()
     {
         _pinMenu.Close();
+        _pinGuard?.SetActive(_settings.AlwaysOnTopEnabled || HasPinnedWindows);
         _pinMouse?.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
         _pinBorders?.Refresh();
         SaveSettings();
@@ -373,8 +385,8 @@ internal sealed class TrayApp : ApplicationContext
 
     private void ShowPinMenu(WindowIdentity target, Point point, bool frameMenu)
     {
-        if (!_settings.AlwaysOnTopEnabled || _alwaysOnTop == null) return;
-        _pinMenu.Show(target, point, _alwaysOnTop, () => _settings.AlwaysOnTopEnabled,
+        if (!_settings.AlwaysOnTopEnabled || _alwaysOnTop == null || !_pinGuard.Revalidate()) return;
+        _pinMenu.Show(target, point, _alwaysOnTop, () => _settings.AlwaysOnTopEnabled && _pinGuard.Revalidate(),
             result => AlwaysOnTopNotice(result, true), UnpinAll, () => { ShowMain(); _main.ShowAlwaysOnTopSettings(); }, frameMenu);
     }
 
@@ -510,7 +522,11 @@ internal sealed class TrayApp : ApplicationContext
         _main.RefreshAll();
     }
 
-    internal void SaveSettings() => SettingsStore.Save(_settings);
+    internal void SaveSettings()
+    {
+        SettingsStore.Save(_settings);
+        _pinGuard?.Refresh();
+    }
     internal void ExitSaverNow() { _auto.ExitSaver("auto disabled"); RefreshTray(); }
     internal void OpenLog() => OpenPath(Log.FilePath);
     internal void Hint(string title, string text) => Balloon(title, text);
@@ -630,6 +646,7 @@ internal sealed class TrayApp : ApplicationContext
     internal void ExitApp()
     {
         _pinMouse?.Dispose();
+        _pinGuard?.Dispose();
         _pinMenu.Dispose();
         _pinBorders?.Dispose();
         _pinSounds?.Dispose();

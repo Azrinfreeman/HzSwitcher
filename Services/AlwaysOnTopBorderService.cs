@@ -7,6 +7,7 @@ internal sealed class AlwaysOnTopBorderService : IDisposable
 {
     private readonly AlwaysOnTopService _pins;
     private readonly Settings _settings;
+    private readonly Func<bool> _mouseProtected;
     private readonly Action<WindowIdentity, Point> _menu;
     private readonly Dictionary<WindowIdentity, AlwaysOnTopBorderWindow> _borders = new();
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 500 };
@@ -20,9 +21,9 @@ internal sealed class AlwaysOnTopBorderService : IDisposable
         foreach (var entry in _borders) if (entry.Value.Handle == handle) return entry.Key;
         return null;
     }
-    public AlwaysOnTopBorderService(AlwaysOnTopService pins, Settings settings, Action<WindowIdentity, Point> menu)
+    public AlwaysOnTopBorderService(AlwaysOnTopService pins, Settings settings, Action<WindowIdentity, Point> menu, Func<bool> mouseProtected = null)
     {
-        _pins = pins; _settings = settings; _menu = menu;
+        _pins = pins; _settings = settings; _menu = menu; _mouseProtected = mouseProtected ?? (() => false);
         _ = _dispatcher.Handle;
         _events = new WindowEventObserver(handle =>
         {
@@ -58,7 +59,7 @@ internal sealed class AlwaysOnTopBorderService : IDisposable
             foreach (var identity in _borders.Keys.Except(managed).ToArray()) { _borders[identity].Dispose(); _borders.Remove(identity); }
             foreach (var identity in managed)
             {
-                if (!_settings.AlwaysOnTopOutline || _locked || !Environment.UserInteractive ||
+                if (!_settings.AlwaysOnTopOutline || _mouseProtected() || _locked || !Environment.UserInteractive ||
                     !WindowGeometry.TryBounds(identity.Handle, out var bounds, out int dpi))
                 { if (_borders.TryGetValue(identity, out var hidden)) hidden.Hide(); continue; }
                 try

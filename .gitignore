@@ -10,3 +10,10 @@ artifacts/**/*.sha256
 # editor
 .vs/
 *.user
+
+# Trailer render intermediates (editable assets are included in the source ZIP)
+/artifacts/trailer/assets/
+/artifacts/trailer/audio/
+/artifacts/trailer/qa/
+/artifacts/trailer/video-silent.mp4
+/artifacts/trailer/source/__pycache__/

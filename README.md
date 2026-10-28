@@ -2,7 +2,7 @@
 
 A small Windows tray app for switching a monitor's refresh rate and brightness, with an automatic power-saver that drops the rate when you are idle or watching video.
 
-Version 1.7.1. Windows 10 or 11, x64. Built with C# on .NET 10 (Windows Forms). The release exe is self-contained, so no .NET install is needed.
+Version 1.7.3. Windows 10 or 11, x64. Built with C# on .NET 10 (Windows Forms). The release exe is self-contained, so no .NET install is needed.
 
 ## What it does
 
@@ -40,9 +40,11 @@ On **General**, turn on **Enable always on top**, then focus another app and pre
 
 Pinned windows show an outline in the Windows accent color and play distinct short sounds when pinned or unpinned. General settings let you switch the outline, sounds and mouse gesture on/off, and choose outline thickness (1-8 logical pixels, scaled for the monitor).
 
-**Right-click a standard title bar or window frame** to open a window menu with a checked **Always on top** option alongside the app's window commands (Restore, Move, Size, Minimize, Maximize and Close where available). Choose Always on top again to unpin. The **Original window menu** entry opens the application's own menu for specialized or owner-drawn commands.
+**Right-click a standard title bar or window frame** to open a window menu with a checked **Always on top** option alongside the app's window commands (Restore, Move, Size, Minimize, Maximize and Close where available). Choose Always on top again to unpin. The **Original window menu** entry closes the HzSwitcher popup and opens the application's native Alt+Space menu, including specialized or owner-drawn commands.
 
 **Shift+right-click** anywhere on a window opens the compact HzSwitcher menu, including for custom title bars that are drawn inside the app's content. A normal **right-click on the pinned outline** opens the same compact menu. General's mouse-menu setting controls frame and Shift+right-click gestures. Actions use the clicked window even if another window has focus. Ordinary right-click inside app content continues to use that app's context menu. Frame integration uses a HzSwitcher popup populated from the system menu; it does not permanently modify another app's menu.
+
+Mouse pin menus and outlines pause while a fullscreen app or a game in the configured game-process list is foreground. This includes Shift+right-click and applies across monitors. Normal menus and outlines return after leaving fullscreen or switching to a desktop app. Pins stay in place; the keyboard shortcut and General > Unpin all remain available.
 
 You can pin several windows. **Unpin all**, turning the feature off, or **Exit app** restores windows pinned by HzSwitcher. Windows already on top are left unchanged. Some protected or elevated windows cannot be controlled, and other topmost windows or exclusive fullscreen apps can cover a pinned window.
 
@@ -73,13 +75,13 @@ dotnet test tests\HzSwitcher.Tests
 # self-contained single-file release
 dotnet publish -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o artifacts\1.7.1
+  -p:EnableCompressionInSingleFile=true -o artifacts\1.7.3
 ```
 
 The installer is built with [Inno Setup 6](https://jrsoftware.org/isinfo.php) from the published exe:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.7.1 artifacts\installer\HzSwitcher.iss
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=1.7.3 artifacts\installer\HzSwitcher.iss
 ```
 
 It writes `artifacts\installer\HzSwitcher-Setup-<version>.exe`. The installer is unsigned, so Windows SmartScreen may warn about it.

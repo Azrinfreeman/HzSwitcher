@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.3 - 2026-10-28
+
+- Suspend Always on top mouse menus and outlines while a fullscreen app or configured game is foreground, so gameplay right-clicks (including Shift+right-click) pass through.
+- Cancel pending menu actions during gameplay transitions and preserve right-button down/up pairing. Keyboard pin shortcuts and General > Unpin all remain available.
+
+## 1.7.2 - 2026-10-28
+
+- Fixed Original window menu failing to open from resize edges and during the handoff from the HzSwitcher popup. The popup now closes before requesting the native Alt+Space menu.
+
 ## 1.7.1 - 2026-10-27
 
 - Right-click a standard title bar or frame to open a window menu with Always on top alongside the app's window commands. Custom title bars retain the Shift+right-click fallback.
