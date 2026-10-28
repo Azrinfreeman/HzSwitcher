@@ -154,7 +154,7 @@ internal static class Capture
         app.Auto.State = SaverState.Active; app.Auto.Status = "Watching for idle activity"; app.Display.Rate = 240; main.RefreshAll(); Save(main, "restored");
         Page(main, 2); Save(main, "shortcuts", "_hotkeys");
         Page(main, 3); Save(main, "general", "_alwaysOnTop", "_alwaysOnTopStatus");
-        var snapshot = new DiagnosticsSnapshot(new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero), "1.7.3 — preview", "Windows 11", "X64",
+        var snapshot = new DiagnosticsSnapshot(new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero), "1.8.0 — preview", "Windows 11", "X64",
             "Display 1 — Demo monitor", null, "2560x1440", 240, new[] { 60,120,144,165,240 }, 240,240,
             new(BrightnessBackend.Ddc,70,70,70,new DateTimeOffset(2026,10,29,12,0,0,TimeSpan.Zero),false,false),
             true,true,AutomationPauseMode.Running,null,false,SaverState.Active,AutomationReason.Idle,AutomationReason.Idle,0,null);
