@@ -23,6 +23,7 @@ internal sealed class MainForm : Form
     // Display page
     private readonly Label _big = new() { AutoSize = true, Font = new Font("Segoe UI", 34f, FontStyle.Bold) };
     private readonly Label _mode = new() { AutoSize = true, ForeColor = Theme.TextMuted, Font = new Font("Segoe UI", 10f) };
+    private readonly Label _reason = new() { AutoSize = true, MaximumSize = new Size(BodyWidth, 0), AccessibleName = "Current refresh-rate explanation" };
     private readonly ComboBox _monitor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250, DropDownWidth = 440, DisplayMember = "Label" };
     private readonly FlowLayoutPanel _chips = new() { AutoSize = true, WrapContents = true, MaximumSize = new Size(260, 0), Margin = new Padding(0, 0, 0, 6) };
     private readonly FlowLayoutPanel _presets = new() { AutoSize = true, WrapContents = true, MaximumSize = new Size(BodyWidth, 0), MinimumSize = new Size(BodyWidth, 0) };
@@ -51,7 +52,8 @@ internal sealed class MainForm : Form
     // General page
     private readonly Toggle _pinOutline = new() { Text = "Show outline around pinned windows" };
     private readonly Toggle _pinSound = new() { Text = "Play sound when pinning or unpinning" };
-    private readonly Toggle _pinMouse = new() { Text = "Enable window frame and Shift+right-click menus" };
+    private readonly Toggle _pinSystemMenu = new() { Text = "Add Always on top to window title-bar menus" };
+    private readonly Toggle _pinMouse = new() { Text = "Enable Shift+right-click menu" };
     private readonly NumberBox _pinThickness = new() { Minimum = 1, Maximum = 8, Value = 3, AccessibleName = "Outline thickness in logical pixels" };
     private readonly Toggle _alwaysOnTop = new() { Text = "Enable always on top" };
     private readonly Label _alwaysOnTopStatus = new() { AutoSize = true, MaximumSize = new Size(BodyWidth, 0), ForeColor = Theme.TextMuted };
@@ -153,13 +155,15 @@ internal sealed class MainForm : Form
         grid.Controls.Add(right);
         var hero = new Card { Padding = new Padding(15), MinimumSize = new Size(CardWidth, 0), MaximumSize = new Size(CardWidth, 0), Margin = new Padding(0, 0, 0, 12) };
         hero.Controls.Add(grid);
+        hero.Controls.Add(_reason);
+        hero.Controls.Add(FlatButton("Why this rate?", (_, _) => _app.ShowAutomationDetails(), "View decisions, pauses and transition history"));
         page.Controls.Add(hero);
 
         var edit = FlatButton("Edit presets…", (_, _) => _app.EditPresets(), "Rename presets or change their refresh rates");
         page.Controls.Add(Section("Presets", _presets, null, edit));
 
         page.Controls.Add(Section("Refresh rate", _rates,
-            $"Switches instantly. A display problem resets it to {_app.Settings.FallbackHz} Hz.", _showAll));
+            "Manual choices are held temporarily. Interrupted changes can be reviewed in Why this rate?.", _showAll));
 
         var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
         _bri.Margin = new Padding(0, 0, 8, 0);
@@ -178,6 +182,10 @@ internal sealed class MainForm : Form
     {
         var page = NewPage();
 
+        var controls = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
+        controls.Controls.Add(FlatButton("Active / Preview / Pause...", (_, _) => _app.ShowAutomationDetails(), "Choose automation mode or start a recording session"));
+        controls.Controls.Add(FlatButton("Resume automation", (_, _) => _app.Automation.Resume(), "Release manual holds and pauses"));
+        page.Controls.Add(Section("Automation controls", controls, "Preview suggests refresh rates without applying automatic rate or brightness changes. Manual controls remain available."));
         var autoBody = Stack();
         _status.Margin = new Padding(0, 4, 0, 4);
         _bar.Margin = new Padding(0, 0, 0, 12);
@@ -223,7 +231,7 @@ internal sealed class MainForm : Form
         var pin = Stack();
         pin.Controls.Add(_alwaysOnTop);
         pin.Controls.Add(_alwaysOnTopStatus);
-        foreach (var toggle in new[] { _pinOutline, _pinSound, _pinMouse })
+        foreach (var toggle in new[] { _pinSystemMenu, _pinMouse, _pinOutline, _pinSound })
         { toggle.Margin = new Padding(0, 6, 0, 6); pin.Controls.Add(toggle); }
         var thicknessRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
         thicknessRow.Controls.Add(new Label { Text = "Outline thickness (1-8):", AutoSize = true, Margin = new Padding(0, 6, 10, 0) });
@@ -234,11 +242,12 @@ internal sealed class MainForm : Form
         _unpinAll = FlatButton("Unpin all", (_, _) => _app.UnpinAll(), "Restore windows pinned by HzSwitcher");
         pinActions.Controls.Add(_unpinAll);
         pin.Controls.Add(pinActions);
-        page.Controls.Add(Section("Always on top", pin, "Right-click a standard title bar or window frame for Always on top. Use Shift+right-click anywhere for custom title bars. You can also right-click a pinned outline. HzSwitcher must stay running."));
+        page.Controls.Add(Section("Always on top", pin, "Right-click a title bar (or press Alt+Space) and choose Always on top (HzSwitcher). For apps with their own custom menus, Shift+right-click the window. You can also right-click a pinned outline. HzSwitcher must stay running."));
 
         var tools = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
         tools.Controls.Add(FlatButton("Advanced settings…", (_, _) => _app.ShowAdvancedSettings(), "Video/game detection lists"));
         tools.Controls.Add(FlatButton("Open log", (_, _) => _app.OpenLog(), null));
+        tools.Controls.Add(FlatButton("History / Privacy...", (_, _) => _app.ShowAutomationDetails(), "Delete or export local transition history"));
         tools.Controls.Add(FlatButton("Hide to tray", (_, _) => Hide(), "Keep running in the tray"));
         page.Controls.Add(Section("Tools", tools));
 
@@ -304,6 +313,7 @@ internal sealed class MainForm : Form
         _alwaysOnTop.CheckedChanged += (_, _) => { if (!_loading) _app.SetAlwaysOnTop(_alwaysOnTop.Checked); };
         _pinOutline.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutline = _pinOutline.Checked; _app.UpdatePinPreferences(); } };
         _pinSound.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopSound = _pinSound.Checked; _app.UpdatePinPreferences(); } };
+        _pinSystemMenu.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopSystemMenu = _pinSystemMenu.Checked; _app.UpdatePinPreferences(); } };
         _pinMouse.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopMouseMenu = _pinMouse.Checked; _app.UpdatePinPreferences(); } };
         _pinThickness.ValueChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutlineThickness = _pinThickness.Value; _app.UpdatePinPreferences(); } };
         _startup.CheckedChanged += (_, _) => { if (!_loading) _app.SetStartup(_startup.Checked); };
@@ -368,13 +378,13 @@ internal sealed class MainForm : Form
         {
             var s = _app.Settings;
             int cur = _app.Display.GetCurrentHz();
-            bool saver = _app.Auto.State == SaverState.Saver;
+            bool saver = _app.Automation.SaverActive;
             _big.Text = $"{cur} Hz";
             _big.ForeColor = saver ? Theme.Saver : Theme.Text;
             _mode.Text = _app.Display.CurrentModeText();
             ClearAndDispose(_chips);
-            if (saver) _chips.Controls.Add(new StatusChip($"Saver active · {_app.Auto.RestoreHz} Hz returns on activity", Theme.Saver));
-            if (_app.Profiles.ActiveProcess != null) _chips.Controls.Add(new StatusChip($"Profile: {_app.Profiles.ActiveProcess}", Theme.Accent));
+            if (saver) _chips.Controls.Add(new StatusChip($"Saver active · {_app.Automation.RestoreHz} Hz returns on activity", Theme.Saver));
+            if (_app.Automation.ActiveProcess != null) _chips.Controls.Add(new StatusChip($"Profile: {_app.Automation.ActiveProcess}", Theme.Accent));
             _chips.Visible = _chips.Controls.Count > 0;
 
             var monitors = _app.Display.GetMonitors();
@@ -423,6 +433,7 @@ internal sealed class MainForm : Form
             _pinOutline.Checked = s.AlwaysOnTopOutline;
             _pinSound.Checked = s.AlwaysOnTopSound;
             _pinMouse.Checked = s.AlwaysOnTopMouseMenu;
+            _pinSystemMenu.Checked = s.AlwaysOnTopSystemMenu;
             _pinThickness.Value = s.AlwaysOnTopOutlineThickness;
             RefreshAlwaysOnTop();
             _notify.Checked = s.NotifyOnAutoSwitch;
@@ -454,6 +465,10 @@ internal sealed class MainForm : Form
         _briInfo.Text = !ok ? "This monitor does not allow brightness control."
             : soft ? "Software dimming: only darkens the picture. Turn on DDC/CI in the monitor's own menu for real backlight control."
             : "";
+        if (_app.Brightness.IsBusy && _app.Brightness.RequestedLevel >= 0)
+            _briInfo.Text += $" Requested {_app.Brightness.RequestedLevel}%; waiting for the device.";
+        if (!string.IsNullOrEmpty(_app.Brightness.LastError))
+            _briInfo.Text += " " + _app.Brightness.LastError;
         _briInfo.Visible = _briInfo.Text.Length > 0;
     }
 
@@ -474,9 +489,9 @@ internal sealed class MainForm : Form
 
     private void UpdateStatus()
     {
-        _status.Text = _app.Auto.Status;
-        bool saver = _app.Auto.State == SaverState.Saver;
-        _bar.Set(_app.Auto.Progress, saver ? Theme.Saver : Theme.Accent);
+        _reason.Text = _status.Text = _app.Automation.Status;
+        bool saver = _app.Automation.SaverActive;
+        _bar.Set(_app.Automation.Progress, saver ? Theme.Saver : Theme.Accent);
     }
 
     // ---------- small UI helpers ----------

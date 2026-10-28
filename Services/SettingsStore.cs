@@ -27,11 +27,16 @@ public class AppProfile
     public string Process { get; set; } = "";
     public int Hz { get; set; }
     public bool Enabled { get; set; } = true;
+    public bool AllowSaver { get; set; }
 }
 
 public class Settings
 {
-    public int SettingsVersion { get; set; } = 2;
+    public int SettingsVersion { get; set; } = 3;
+    public bool PreviewMode { get; set; } = true;
+    public bool AutomationPaused { get; set; }
+    public DateTime? PauseUntilUtc { get; set; }
+    public int ManualHoldMinutes { get; set; } = 15;
     /// <summary>Device name of the monitor to control, e.g. \\.\DISPLAY1. Empty = primary.</summary>
     public string MonitorDevice { get; set; } = "";
     public bool AlwaysOnTopEnabled { get; set; }
@@ -39,7 +44,10 @@ public class Settings
     private int _outlineThickness = 3;
     public int AlwaysOnTopOutlineThickness { get => _outlineThickness; set => _outlineThickness = Math.Clamp(value, 1, 8); }
     public bool AlwaysOnTopSound { get; set; } = true;
+    /// <summary>Shift+right-click fallback menu (and the legacy frame menu when system-menu integration is off).</summary>
     public bool AlwaysOnTopMouseMenu { get; set; } = true;
+    /// <summary>Adds "Always on top (HzSwitcher)" to other windows' native system menus.</summary>
+    public bool AlwaysOnTopSystemMenu { get; set; } = true;
     public bool AlwaysOnTopShortcutInitialized { get; set; }
     public bool ShowAllRates { get; set; }
     public bool NotifyOnAutoSwitch { get; set; } = true;
@@ -69,6 +77,7 @@ public class Settings
     public int SaverBrightness { get; set; } = -1;
     /// <summary>Brightness to put back after a saver that was interrupted by a crash; -1 = none.</summary>
     public int PendingBrightness { get; set; } = -1;
+    public string PendingBrightnessTarget { get; set; } = "";
 
     public List<Preset> Presets { get; set; } = new()
     {
@@ -111,6 +120,8 @@ public class Settings
 
 public static class SettingsStore
 {
+    public static string LastError { get; private set; }
+    private static bool _readOnly;
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     private static string FilePath => Path.Combine(Log.Dir, "settings.json");
@@ -120,42 +131,95 @@ public static class SettingsStore
     /// <summary>Parses a settings file and migrates older versions. Throws JsonException on bad JSON.</summary>
     public static Settings Parse(string text)
     {
+        using var document = JsonDocument.Parse(text);
+        if (document.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("Settings must be an object.");
+        bool versioned = document.RootElement.TryGetProperty("SettingsVersion", out var versionElement);
+        int version = versioned ? versionElement.GetInt32() : 1;
+        if (version > 3) throw new NotSupportedException("These settings require a newer HzSwitcher. The file has been preserved.");
         var loaded = JsonSerializer.Deserialize<Settings>(text, Options) ?? new Settings();
-        if (!text.Contains("\"SettingsVersion\""))
+        // Files from before system-menu integration inherit the old combined mouse-menu choice, so opt-outs stay off.
+        if (!document.RootElement.TryGetProperty(nameof(Settings.AlwaysOnTopSystemMenu), out _))
+            loaded.AlwaysOnTopSystemMenu = loaded.AlwaysOnTopMouseMenu;
+        if (!versioned)
         {
             // Pre-1.1 file: move to the preset-based default hotkeys.
             loaded.Hotkeys = new Settings().Hotkeys;
-            loaded.SettingsVersion = 2;
         }
+        if (version < 3)
+        {
+            loaded.PreviewMode = false;
+            foreach (var profile in loaded.Profiles ?? new()) profile.AllowSaver = true;
+        }
+        loaded.SettingsVersion = 3;
+        loaded.Presets ??= new(); loaded.Profiles ??= new(); loaded.Hotkeys ??= new();
+        loaded.MonitorBrightness ??= new(); loaded.WatchTitles ??= new(); loaded.WatchBrowsers ??= new();
+        loaded.WatchPlayers ??= new(); loaded.GameProcesses ??= new();
+        loaded.Presets.RemoveAll(p => p == null); loaded.Profiles.RemoveAll(p => p == null); loaded.Hotkeys.RemoveAll(p => p == null);
+        loaded.MonitorDevice ??= "";
+        loaded.PendingBrightnessTarget ??= "";
+        foreach (var p in loaded.Presets) { p.Name ??= "Preset"; p.Hz = Math.Clamp(p.Hz, 0, 1000); }
+        foreach (var h in loaded.Hotkeys) { h.Keys ??= ""; h.Action ??= ""; h.Preset ??= ""; }
+        foreach (var p in loaded.Profiles) { p.Process ??= ""; p.Hz = Math.Clamp(p.Hz, 0, 1000); }
+        loaded.WatchTitles.RemoveAll(s => string.IsNullOrWhiteSpace(s));
+        loaded.WatchBrowsers.RemoveAll(s => string.IsNullOrWhiteSpace(s));
+        loaded.WatchPlayers.RemoveAll(s => string.IsNullOrWhiteSpace(s));
+        loaded.GameProcesses.RemoveAll(s => string.IsNullOrWhiteSpace(s));
+        loaded.IdleMinutes = Math.Clamp(loaded.IdleMinutes, 1, 240);
+        loaded.RestoreSeconds = Math.Clamp(loaded.RestoreSeconds, 1, 60);
+        loaded.ActivityGapSeconds = double.IsFinite(loaded.ActivityGapSeconds) ? Math.Clamp(loaded.ActivityGapSeconds, .1, 60) : 1.5;
+        loaded.MinSwitchSeconds = Math.Clamp(loaded.MinSwitchSeconds, 0, 300);
+        loaded.ProfileLeaveSeconds = Math.Clamp(loaded.ProfileLeaveSeconds, 1, 120);
+        loaded.WatchingQuietSeconds = Math.Clamp(loaded.WatchingQuietSeconds, 1, 3600);
+        loaded.SaverHz = Math.Clamp(loaded.SaverHz, 1, 1000);
+        loaded.SaverBrightness = Math.Clamp(loaded.SaverBrightness, -1, 100);
+        loaded.ManualHoldMinutes = Math.Clamp(loaded.ManualHoldMinutes, 1, 1440);
         return loaded;
     }
 
     public static Settings Load()
     {
+        _readOnly = false;
+        LastError = null;
         try
         {
             if (!File.Exists(FilePath)) return new Settings();
             string text = File.ReadAllText(FilePath);
-            bool migrated = !text.Contains("\"SettingsVersion\"");
             var loaded = Parse(text);
-            if (migrated) Save(loaded);
+            using var document = JsonDocument.Parse(text);
+            bool migrated = !document.RootElement.TryGetProperty("SettingsVersion", out var v) || v.GetInt32() < 3;
+            if (migrated)
+            {
+                if (!File.Exists(FilePath + ".v2-backup")) File.Copy(FilePath, FilePath + ".v2-backup");
+                Save(loaded);
+            }
             return loaded;
+        }
+        catch (NotSupportedException e)
+        {
+            _readOnly = true;
+            LastError = e.Message;
+            return new Settings { AutomationPaused = true };
         }
         catch (Exception e)
         {
+            LastError = e.Message;
             Log.Write("Settings load failed: " + e.Message);
             try { File.Copy(FilePath, FilePath + ".bad", true); Log.Write("Unreadable settings kept as settings.json.bad"); } catch { }
             return new Settings();
         }
     }
 
-    public static void Save(Settings s)
+    public static void Save(Settings s) => TrySave(s);
+
+    public static bool TrySave(Settings s)
     {
+        if (_readOnly) return false;
         try
         {
-            Directory.CreateDirectory(Log.Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(s, Options));
+            AtomicJsonFile.Write(FilePath, s);
+            LastError = null;
+            return true;
         }
-        catch (Exception e) { Log.Write("Settings save failed: " + e.Message); }
+        catch (Exception e) { LastError = e.Message; Log.Write("Settings save failed: " + e.Message); return false; }
     }
 }

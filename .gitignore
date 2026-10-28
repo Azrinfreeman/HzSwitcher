@@ -6,6 +6,7 @@ obj/
 # release binaries (rebuild with dotnet publish / ISCC, see README)
 artifacts/**/*.exe
 artifacts/**/*.sha256
+artifacts/qa/
 
 # editor
 .vs/

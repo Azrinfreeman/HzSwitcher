@@ -39,6 +39,8 @@ internal sealed class WindowMouseHook : IDisposable
     private Point _point;
     private bool _enabled, _frame;
     public bool Available => _hook != IntPtr.Zero;
+    /// <summary>Legacy replacement of frame menus. Off while native system-menu integration is active.</summary>
+    public bool FrameMenus { get; set; } = true;
     public WindowMouseHook(Control ui, Action<IntPtr, Point, bool> open) { _ui = ui; _open = open; _callback = Callback; }
     public void SetEnabled(bool enabled)
     {
@@ -61,7 +63,7 @@ internal sealed class WindowMouseHook : IDisposable
         bool shift = (GetAsyncKeyState(0x10) & 0x8000) != 0;
         IntPtr target = down && !injected && _enabled ? GetAncestor(WindowFromPoint(mouse.Point), 2) : IntPtr.Zero;
         bool eligible = target != IntPtr.Zero && Eligible(target);
-        bool frame = eligible && !shift && WindowFrameApi.IsFrameCandidate(target, mouse.Point);
+        bool frame = FrameMenus && eligible && !shift && WindowFrameApi.IsFrameCandidate(target, mouse.Point);
         if (!_gesture.Process(down, !down, injected, _enabled, shift, eligible, frame))
             return CallNextHookEx(_hook, code, message, data);
         if (down) { _target = target; _point = mouse.Point; _frame = frame; }

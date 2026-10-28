@@ -9,18 +9,36 @@ public record MonitorInfo(string Device, string Label, bool Primary);
 public class DisplayService : IDisplay
 {
     private readonly Func<string> _preferred;
+    private readonly MonitorCatalog _catalog = new();
 
-    public DisplayService(Func<string> preferredDevice) => _preferred = preferredDevice;
+    public DisplayService(Func<string> preferredDevice) { _preferred = preferredDevice; _catalog.Refresh(); }
+    public void RefreshCatalog() => _catalog.Refresh();
 
-    /// <summary>The monitor being controlled: the chosen one if it is still attached, otherwise the primary.</summary>
+    /// <summary>The configured monitor. A missing target must never redirect writes to the primary.</summary>
     public string Device
     {
         get
         {
             string pref = _preferred();
-            if (!string.IsNullOrEmpty(pref) && Screen.AllScreens.Any(s => s.DeviceName == pref)) return pref;
+            if (!string.IsNullOrEmpty(pref)) return pref;
             return Screen.PrimaryScreen?.DeviceName ?? @"\\.\DISPLAY1";
         }
+    }
+
+    public string TargetIdentity() => TargetIdentity(Device);
+
+    public string TargetIdentity(string device)
+    {
+        if (!Screen.AllScreens.Any(s => s.DeviceName == device)) return "";
+        var target = _catalog.Targets.FirstOrDefault(t => t.Device == device && t.Independent);
+        if (target == null) return "";
+        var dd = new DISPLAY_DEVICE { cb = Marshal.SizeOf<DISPLAY_DEVICE>() };
+        var dm = NewDevMode();
+        if (!DisplayApi.EnumDisplayDevices(device, 0, ref dd, 1) || string.IsNullOrEmpty(dd.DeviceID) ||
+            !DisplayApi.EnumDisplaySettingsEx(device, DisplayApi.ENUM_CURRENT_SETTINGS, ref dm, 0)) return "";
+        if (!string.Equals(dd.DeviceID, target.DevicePath, StringComparison.OrdinalIgnoreCase)) return "";
+        // Device-interface path + connection name and mode context. Refresh changes do not change identity.
+        return $"{device}|{target.DevicePath}|{target.Connection}|{target.Driver}|{dm.dmPelsWidth}x{dm.dmPelsHeight}|{dm.dmBitsPerPel}|{dm.dmDisplayOrientation}";
     }
 
     public List<MonitorInfo> GetMonitors()

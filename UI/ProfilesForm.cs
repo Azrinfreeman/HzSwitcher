@@ -20,6 +20,7 @@ internal sealed class ProfilesForm : DialogShell
     {
         public FlowLayoutPanel Panel;
         public Toggle On;
+        public CheckBox AllowSaver;
         public ComboBox Process, Rate;
     }
 
@@ -71,14 +72,15 @@ internal sealed class ProfilesForm : DialogShell
         _list.Controls.Remove(_empty);
         var row = new Row { Panel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 0, 0, 6) } };
         row.On = new Toggle { Checked = p.Enabled, Margin = new Padding(0, 3, 10, 0) };
-        row.Process = new ComboBox { Width = Theme.Dp(this, 250), DropDownStyle = ComboBoxStyle.DropDown, Margin = new Padding(0, 3, 8, 0) };
+        row.Process = new ComboBox { Width = Theme.Dp(this, 170), DropDownStyle = ComboBoxStyle.DropDown, Margin = new Padding(0, 3, 8, 0) };
         row.Process.Items.AddRange(_running.Cast<object>().ToArray());
         row.Process.Text = p.Process;
-        row.Rate = new ComboBox { Width = Theme.Dp(this, 140), Margin = new Padding(0, 3, 8, 0) };
+        row.Rate = new ComboBox { Width = Theme.Dp(this, 110), Margin = new Padding(0, 3, 8, 0) };
+        row.AllowSaver = new CheckBox { Text = "Allow saver", AutoSize = true, Checked = p.AllowSaver, AccessibleName = "Allow saver while this app is open" };
         RateChoice.Fill(row.Rate, _supported, p.Hz);
         var remove = new PillButton { Text = "Remove", Margin = new Padding(0) };
         remove.Click += (_, _) => { _rows.Remove(row); _list.Controls.Remove(row.Panel); row.Panel.Dispose(); };
-        row.Panel.Controls.AddRange(new Control[] { row.On, row.Process, row.Rate, remove });
+        row.Panel.Controls.AddRange(new Control[] { row.On, row.Process, row.Rate, row.AllowSaver, remove });
         _rows.Add(row);
         _list.Controls.Add(row.Panel);
         Theme.Style(row.Panel);
@@ -90,7 +92,7 @@ internal sealed class ProfilesForm : DialogShell
         _s.ProfileLeaveSeconds = _leave.Value;
         _s.Profiles = _rows
             .Where(r => r.Process.Text.Trim().Length > 0)
-            .Select(r => new AppProfile { Process = Match.Normalize(r.Process.Text), Hz = RateChoice.Value(r.Rate), Enabled = r.On.Checked })
+            .Select(r => new AppProfile { Process = Match.Normalize(r.Process.Text), Hz = RateChoice.Value(r.Rate), Enabled = r.On.Checked, AllowSaver = r.AllowSaver.Checked })
             .ToList();
         SettingsStore.Save(_s);
         return true;

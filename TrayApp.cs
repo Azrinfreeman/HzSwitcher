@@ -17,15 +17,17 @@ internal sealed class TrayApp : ApplicationContext
     private readonly Settings _settings = SettingsStore.Load();
     private readonly DisplayService _display;
     private readonly BrightnessService _brightness;
-    private readonly SafetyNetService _safety;
     private readonly MediaDetector _media;
-    private readonly AutoSaverService _auto;
-    private readonly ProfileService _profiles;
+    private readonly AutomationCoordinator _automation;
     private AlwaysOnTopService _alwaysOnTop;
     private string _alwaysOnTopFailure;
     private AlwaysOnTopBorderService _pinBorders;
     private AlwaysOnTopSoundService _pinSounds;
     private HzSwitcher.Native.WindowMouseHook _pinMouse;
+    private WindowSystemMenuService _systemMenus;
+    private HzSwitcher.Native.WindowMenuEventObserver _menuEvents;
+    private System.Windows.Forms.Timer _menuPump;
+    private string _systemMenuFailure;
     private readonly WindowPinMenu _pinMenu = new();
     private readonly HashSet<int> _registeredHotkeys = new();
     private readonly HotkeyWindow _hotkeys = new();
@@ -36,6 +38,9 @@ internal sealed class TrayApp : ApplicationContext
     private RegisteredWaitHandle _showWait;
     private IntPtr _iconHandle;
     private int _preSaverBrightness = -1;
+    private string _saverBrightnessTarget;
+    private int _saverBrightnessLevel;
+    private bool _restoringBrightness;
     private bool _brightnessDirty;
     private ThemedSlider _trayBar;
     private Label _trayBarLabel;
@@ -43,29 +48,24 @@ internal sealed class TrayApp : ApplicationContext
     internal Settings Settings => _settings;
     internal DisplayService Display => _display;
     internal BrightnessService Brightness => _brightness;
-    internal AutoSaverService Auto => _auto;
-    internal ProfileService Profiles => _profiles;
+    internal AutomationCoordinator Automation => _automation;
 
     public TrayApp(bool startHidden)
     {
         _ = _ui.Handle;   // force handle creation so BeginInvoke works from other threads
 
         _display = new DisplayService(() => _settings.MonitorDevice);
+        if (string.IsNullOrEmpty(_settings.MonitorDevice))
+        { _settings.MonitorDevice = _display.Device; SettingsStore.Save(_settings); }
         _brightness = new BrightnessService(() => _display.Device,
-            key => _settings.MonitorBrightness.TryGetValue(key, out int v) ? v : -1);
+            key => _settings.MonitorBrightness.TryGetValue(key, out int v) ? v : -1, _display.TargetIdentity);
         _brightness.Changed += OnBrightnessChanged;
-        _safety = new SafetyNetService(_display, _settings, () => _display.Device);
-        _safety.RecoverIfNeeded();
-
         _media = new MediaDetector(() => _settings);
-        _auto = new AutoSaverService(() => _settings, _display, _media, _ui, apply: _safety.Apply);
-        _auto.Changed += RefreshTray;
-        _auto.Notice += OnNotice;
-        _auto.SaverStarted += OnSaverStarted;
-        _auto.SaverEnded += OnSaverEnded;
-        _profiles = new ProfileService(() => _settings, _display, _auto, hz => { bool ok = _safety.Apply(hz); RefreshTray(); return ok; });
-        _profiles.Notice += OnNotice;
-        _profiles.Changed += RefreshTray;
+        _automation = new AutomationCoordinator(_settings, _display, _media, _display.TargetIdentity, Log.Dir);
+        _automation.Changed += RefreshTray;
+        _automation.Notice += OnNotice;
+        _automation.CancelDeferredWrites += _brightness.CancelAutomaticPending;
+        _automation.SaverChanged += active => { if (active) OnSaverStarted(); else OnSaverEnded(); };
         _main = new MainForm(this);
         if (_settings.AlwaysOnTopEnabled) InitializeAlwaysOnTop();
 
@@ -85,7 +85,9 @@ internal sealed class TrayApp : ApplicationContext
         _hotkeys.HotkeyPressed += OnHotkey;
         var failed = ApplyHotkeys();
         if (failed.Count > 0) Balloon("Hotkey unavailable", "Could not register: " + string.Join(", ", failed));
-        SystemEvents.DisplaySettingsChanged += (_, _) => _ui.BeginInvoke(() => { _brightness.Invalidate(); _brightness.RefreshAsync(); RefreshTray(); });
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
         // A second launch signals this event; open the window in response.
         _showWait = ThreadPool.RegisterWaitForSingleObject(_showSignal, (_, _) => _ui.BeginInvoke(ShowMain), null, Timeout.Infinite, false);
@@ -116,13 +118,19 @@ internal sealed class TrayApp : ApplicationContext
 
     internal void SelectMonitor(string device)
     {
-        _auto.ExitSaver("monitor changed");
-        _safety.CancelVerification();
+        if (_automation.Transitions.Pending != null || _settings.PendingBrightness >= 0)
+        { Balloon("Finish display change", "Review the pending transition before selecting another monitor."); return; }
+        if (_automation.SaverActive)
+        {
+            Balloon("Temporary mode retained", "The previous monitor keeps its current rate. Select it again to adjust it manually.");
+            _preSaverBrightness = -1;
+        }
         CommitBrightness();
         _settings.MonitorDevice = device;
         SettingsStore.Save(_settings);
         _brightness.Invalidate();
         _brightness.RefreshAsync();
+        _automation.Tick();
         Log.Write($"Monitor set to {_display.Device}");
         RefreshTray();
     }
@@ -130,15 +138,9 @@ internal sealed class TrayApp : ApplicationContext
     internal void SetHz(int hz)
     {
         if (!_display.GetSupportedHz().Contains(hz)) { Balloon("Not supported", $"{hz} Hz is not available on this monitor."); return; }
-        if (_safety.Apply(hz))
+        if (!_automation.SetManualRate(hz))
         {
-            _profiles.OnManualChange();
-            _auto.OnManualChange();
-        }
-        else
-        {
-            _auto.OnAutomaticChange();
-            Balloon("Refresh rate", $"Could not switch to {hz} Hz; now at {_display.GetCurrentHz()} Hz.");
+            Balloon("Refresh rate", _automation.Status);
         }
         RefreshTray();
     }
@@ -155,7 +157,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         _settings.AutoEnabled = !_settings.AutoEnabled;
         SettingsStore.Save(_settings);
-        if (!_settings.AutoEnabled) _auto.ExitSaver("auto disabled");
+        _automation.Tick();
         Balloon("Auto power-saver", _settings.AutoEnabled ? "On" : "Off");
         RefreshTray();
     }
@@ -164,16 +166,11 @@ internal sealed class TrayApp : ApplicationContext
 
     private void RestoreBrightnessAtStart()
     {
-        if (_settings.PendingBrightness >= 0)
-        {
-            // The app ended while the saver had dimmed the screen: put the old level back.
-            Log.Write($"Restoring brightness {_settings.PendingBrightness} left over from an interrupted saver");
-            _brightness.RequestSet(_settings.PendingBrightness);
-            _settings.PendingBrightness = -1;
-            SettingsStore.Save(_settings);
-        }
+        // Legacy pending brightness cannot establish its original target. Review it instead of redirecting recovery.
+        if (_settings.PendingBrightness >= 0 || _settings.PreviewMode || _settings.AutomationPaused)
+            _brightness.RefreshAsync();
         else if (_settings.RestoreBrightnessOnStart && _settings.MonitorBrightness.TryGetValue(_brightness.Key, out int saved))
-            _brightness.RequestSet(saved);
+            _brightness.RequestSet(saved, automatic: true);
         else
             _brightness.RefreshAsync();
     }
@@ -184,13 +181,16 @@ internal sealed class TrayApp : ApplicationContext
         _brightness.RequestSet(percent);
         _brightnessDirty = true;
         // A change made while the saver is active is the level to return to.
-        if (_preSaverBrightness >= 0) _preSaverBrightness = _brightness.Get();
+        if (_preSaverBrightness >= 0) _preSaverBrightness = Math.Clamp(percent,
+            _brightness.Mode == BrightnessMode.Software ? BrightnessService.SoftwareFloor : 0, 100);
+        if (_preSaverBrightness >= 0) _saverBrightnessLevel = _preSaverBrightness;
     }
 
     /// <summary>Remembers the current level for this monitor.</summary>
     internal void CommitBrightness()
     {
         if (!_brightnessDirty) return;
+        if (_brightness.IsBusy || !_brightness.LastWriteSucceeded) return;
         _brightnessDirty = false;
         if (!_brightness.IsSupported) return;
         int level = _preSaverBrightness >= 0 ? _preSaverBrightness : _brightness.Get();
@@ -201,25 +201,51 @@ internal sealed class TrayApp : ApplicationContext
 
     private void OnSaverStarted()
     {
+        if (_settings.PreviewMode) return;
         int target = _settings.SaverBrightness;
         if (target < 0 || !_brightness.IsSupported) return;
         _preSaverBrightness = _brightness.Get();
         _settings.PendingBrightness = _preSaverBrightness;
-        SettingsStore.Save(_settings);
-        _brightness.RequestSet(target);
+        _settings.PendingBrightnessTarget = _saverBrightnessTarget = _display.TargetIdentity();
+        _saverBrightnessLevel = target;
+        if (!SettingsStore.TrySave(_settings)) { _preSaverBrightness = -1; return; }
+        _brightness.RequestSet(target, automatic: true);
     }
 
     private void OnSaverEnded()
     {
+        if (_settings.PreviewMode) return;
         if (_preSaverBrightness < 0) return;
-        _brightness.RequestSet(_preSaverBrightness);
-        _preSaverBrightness = -1;
-        _settings.PendingBrightness = -1;
-        SettingsStore.Save(_settings);
+        if (_display.TargetIdentity() != _saverBrightnessTarget) return;
+        int restore = _preSaverBrightness;
+        string target = _saverBrightnessTarget;
+        _brightness.RefreshAsync(observed =>
+        {
+            if (!_automation.CanWriteAutomation || _display.TargetIdentity() != target || _preSaverBrightness != restore) return;
+            if (Math.Abs(observed - _saverBrightnessLevel) > 2)
+            {
+                // Another control has superseded the automatic level. Yield instead of restoring over it.
+                _preSaverBrightness = -1;
+                _settings.PendingBrightness = -1; _settings.PendingBrightnessTarget = "";
+                SettingsStore.Save(_settings);
+                return;
+            }
+            _restoringBrightness = true;
+            _brightness.RequestSet(restore, automatic: true);
+            _preSaverBrightness = -1;
+        });
     }
 
     private void OnBrightnessChanged()
     {
+        if (_brightnessDirty) CommitBrightness();
+        if (_restoringBrightness && _display.TargetIdentity() == _settings.PendingBrightnessTarget &&
+            _brightness.LastWriteSucceeded && Math.Abs(_brightness.Get() - _settings.PendingBrightness) <= 2)
+        {
+            _restoringBrightness = false;
+            _settings.PendingBrightness = -1; _settings.PendingBrightnessTarget = "";
+            if (SettingsStore.TrySave(_settings)) _automation.BrightnessRecoveryCompleted();
+        }
         if (_trayBar == null || _trayBar.IsDisposed || _trayBar.Capture) return;
         int v = Math.Clamp(_brightness.Get(), _trayBar.Minimum, _trayBar.Maximum);
         _trayBar.Value = v;
@@ -335,6 +361,10 @@ internal sealed class TrayApp : ApplicationContext
                 ShowPinMenu(target, point, frameClick);
             });
             _pinMouse.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
+            _systemMenus = new WindowSystemMenuService(new HzSwitcher.Native.WindowSystemMenuApi(), _alwaysOnTop, result => AlwaysOnTopNotice(result, true));
+            _menuPump = new System.Windows.Forms.Timer { Interval = 100 };
+            _menuPump.Tick += (_, _) => _systemMenus.Pump();
+            ApplySystemMenus();
             _alwaysOnTopFailure = null;
         }
         catch (Exception e) { _alwaysOnTopFailure = "Unavailable: window tracking failed."; Log.Write(e.ToString()); }
@@ -364,9 +394,35 @@ internal sealed class TrayApp : ApplicationContext
     {
         _pinMenu.Close();
         _pinMouse?.SetEnabled(_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu);
+        ApplySystemMenus();
         _pinBorders?.Refresh();
         SaveSettings();
         _main.RefreshAlwaysOnTop();
+    }
+
+    private void ApplySystemMenus()
+    {
+        if (_systemMenus == null) return;
+        bool want = _settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopSystemMenu;
+        if (want && _menuEvents == null)
+        {
+            try
+            {
+                _menuEvents = new HzSwitcher.Native.WindowMenuEventObserver(_ui, _systemMenus.Handle, _systemMenus.Rescan);
+                _systemMenuFailure = null;
+            }
+            catch (Exception e) { _systemMenuFailure = "System-menu events unavailable"; Log.Write(e.ToString()); }
+        }
+        if (!want || _menuEvents == null)
+        {
+            // Stop new event work before removing owned entries.
+            _menuEvents?.Dispose(); _menuEvents = null;
+            _menuPump.Stop();
+            _systemMenus.SetEnabled(false);
+        }
+        else { _systemMenus.SetEnabled(true); _menuPump.Start(); }
+        // Native menus replace the legacy frame interception; Shift+right-click stays as the fallback.
+        if (_pinMouse != null) _pinMouse.FrameMenus = _menuEvents == null;
     }
 
     private void ShowPinMenu(WindowIdentity target, Point point) => ShowPinMenu(target, point, false);
@@ -386,6 +442,7 @@ internal sealed class TrayApp : ApplicationContext
             string status = !_settings.AlwaysOnTopEnabled ? "Disabled" : _alwaysOnTopFailure ??
                 (bindings.Length == 0 ? "No shortcut assigned" : bindings.All(x => _registeredHotkeys.Contains(x.i)) ? "Ready" : "Shortcut unavailable");
             return status + (_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopMouseMenu && _pinMouse?.Available != true ? " / Mouse menu unavailable" : "") +
+                (_settings.AlwaysOnTopEnabled && _settings.AlwaysOnTopSystemMenu ? " / " + (_systemMenuFailure ?? _systemMenus?.Status ?? "System menus unavailable") : "") +
                 (_pinBorders?.Available == false ? " / Outline unavailable" : "") + " - " + (_alwaysOnTop?.Count ?? 0) + " pinned" +
                 (bindings.Length == 0 ? "" : "\nShortcut: " + string.Join(", ", bindings.Select(x => x.b.Keys)));
         }
@@ -416,10 +473,20 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add("Open HzSwitcher", null, (_, _) => ShowMain());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Info($"Current: {_display.CurrentModeText()}", menu, bold: true));
-        if (_auto.State == SaverState.Saver)
-            menu.Items.Add(Info($"Saver active (will restore {_auto.RestoreHz} Hz)", menu));
-        if (_profiles.ActiveProcess != null)
-            menu.Items.Add(Info($"Profile active: {_profiles.ActiveProcess}", menu));
+        menu.Items.Add(Info(_automation.Status, menu));
+        menu.Items.Add("Why this rate? / History", null, (_, _) => ShowAutomationDetails());
+        var pause = new ToolStripMenuItem("Pause automation");
+        pause.DropDownItems.Add("15 minutes", null, (_, _) => _automation.Pause(15));
+        pause.DropDownItems.Add("1 hour", null, (_, _) => _automation.Pause(60));
+        pause.DropDownItems.Add("Until resumed", null, (_, _) => _automation.Pause(null));
+        menu.Items.Add(pause);
+        menu.Items.Add("Resume automation", null, (_, _) => _automation.Resume());
+        var preview = new ToolStripMenuItem("Preview automation") { Checked = _settings.PreviewMode };
+        preview.Click += (_, _) => SetPreview(!_settings.PreviewMode);
+        menu.Items.Add(preview);
+        var recording = new ToolStripMenuItem("Recording / presentation session") { Checked = _automation.RecordingSession };
+        recording.Click += (_, _) => _automation.SetRecording(!_automation.RecordingSession);
+        menu.Items.Add(recording);
         menu.Items.Add(new ToolStripSeparator());
 
         foreach (var preset in _settings.Presets)
@@ -511,7 +578,61 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     internal void SaveSettings() => SettingsStore.Save(_settings);
-    internal void ExitSaverNow() { _auto.ExitSaver("auto disabled"); RefreshTray(); }
+    internal void ExitSaverNow() { _automation.Tick(); RefreshTray(); }
+    internal void ShowAutomationDetails()
+    {
+        using var form = new AutomationDetailsForm(_automation, _settings, SetPreview, RecoverBrightness);
+        form.ShowDialog(_main.Visible ? _main : null);
+        RefreshTray();
+    }
+
+    private bool RecoverBrightness(bool restore)
+    {
+        if (_settings.PendingBrightness < 0) return true;
+        if (restore)
+        {
+            if (string.IsNullOrEmpty(_settings.PendingBrightnessTarget) || _display.TargetIdentity() != _settings.PendingBrightnessTarget)
+            { Balloon("Brightness recovery", "The original monitor cannot be confirmed. Keep the current brightness and adjust it manually."); return false; }
+            _restoringBrightness = true;
+            _brightness.RequestSet(_settings.PendingBrightness);
+            return false; // asynchronous completion clears the durable record, never the request itself
+        }
+        _brightness.CancelPending(); _preSaverBrightness = -1; _restoringBrightness = false;
+        _settings.PendingBrightness = -1; _settings.PendingBrightnessTarget = "";
+        return SettingsStore.TrySave(_settings);
+    }
+    internal void SetPreview(bool preview)
+    {
+        if (preview && _automation.Transitions.Busy)
+        { Balloon("Verification in progress", "Wait for the current display change to finish before entering preview."); return; }
+        if (preview && _automation.SaverActive)
+        {
+            var choice = MessageBox.Show("Keep the current temporary rate and brightness while previewing?\n\nChoose No to stay in active mode and restore or choose a rate first.",
+                "Preview automation", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (choice != DialogResult.Yes) return;
+        }
+        if (preview)
+        {
+            _brightness.CancelAutomaticPending();
+            _brightness.Flush();
+            if (_brightness.IsBusy)
+            { Balloon("Brightness in progress", "Wait for the current hardware request to finish, then try again."); return; }
+        }
+        _automation.SetPreview(preview);
+    }
+
+    private void OnDisplaySettingsChanged(object sender, EventArgs e) => _ui.BeginInvoke(() =>
+    { _display.RefreshCatalog(); _brightness.Invalidate(); _brightness.RefreshAsync(); _automation.Tick(); RefreshTray(); });
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) => _ui.BeginInvoke(() =>
+    {
+        if (e.Reason == SessionSwitchReason.SessionLock) _automation.SetLocked(true);
+        if (e.Reason == SessionSwitchReason.SessionUnlock) _automation.SetLocked(false);
+    });
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => _ui.BeginInvoke(() =>
+    {
+        if (e.Mode == PowerModes.Suspend) _automation.SetSuspended(true);
+        if (e.Mode == PowerModes.Resume) { _display.RefreshCatalog(); _brightness.Invalidate(); _automation.SetSuspended(false); }
+    });
     internal void OpenLog() => OpenPath(Log.FilePath);
     internal void Hint(string title, string text) => Balloon(title, text);
 
@@ -551,11 +672,9 @@ internal sealed class TrayApp : ApplicationContext
     {
         _main?.RefreshAll();
         int hz = _display.GetCurrentHz();
-        string state = !_settings.AutoEnabled ? "auto off" : _auto.State == SaverState.Saver ? $"saver, restores {_auto.RestoreHz}" : "auto on";
-        if (_profiles.ActiveProcess != null) state += $", profile {_profiles.ActiveProcess}";
-        string text = $"HzSwitcher: {hz} Hz ({state})";
+        string text = $"HzSwitcher: {hz} Hz - {_automation.Status}";
         _tray.Text = text.Length > 63 ? text[..63] : text;
-        SetIcon(hz.ToString(), _auto.State == SaverState.Saver ? Theme.Saver : _profiles.ActiveProcess != null ? Theme.Warn : null);
+        SetIcon(hz.ToString(), _automation.SaverActive ? Theme.Saver : _automation.ActiveProcess != null ? Theme.Warn : null);
     }
 
     /// <summary>Accent badge with the rate; a corner dot marks the saver (green) or an active profile (amber).</summary>
@@ -630,6 +749,9 @@ internal sealed class TrayApp : ApplicationContext
     internal void ExitApp()
     {
         _pinMouse?.Dispose();
+        _menuEvents?.Dispose();
+        _menuPump?.Dispose();
+        _systemMenus?.Dispose();
         _pinMenu.Dispose();
         _pinBorders?.Dispose();
         _pinSounds?.Dispose();
@@ -640,17 +762,17 @@ internal sealed class TrayApp : ApplicationContext
         }
         _main.AllowClose = true;
         _main.Close();
-        _auto.ExitSaver("exit");   // don't leave the monitor stuck at the saver rate
+        _automation.Dispose();
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         CommitBrightness();
         _brightness.Flush();       // let a restored brightness finish before the process ends
         _showWait?.Unregister(null);
         _showSignal.Dispose();
         _tray.Visible = false;
         _hotkeys.Dispose();
-        _profiles.Dispose();
-        _auto.Dispose();
         _brightness.Dispose();
-        _safety.Dispose();
         _media.Dispose();
         _tray.Dispose();
         if (_iconHandle != IntPtr.Zero) DestroyIcon(_iconHandle);

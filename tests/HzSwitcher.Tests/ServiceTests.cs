@@ -33,7 +33,7 @@ public class SettingsTests
     public void FileWithoutVersionGetsDefaultHotkeys()
     {
         var s = SettingsStore.Parse("{}");
-        Assert.Equal(2, s.SettingsVersion);
+        Assert.Equal(3, s.SettingsVersion);
         Assert.Equal(4, s.Hotkeys.Count);
     }
 

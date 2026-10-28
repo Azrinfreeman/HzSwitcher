@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.8.0-beta.1 - 2026-10-28 (local beta)
+
+- Replace the live saver/profile timers with one automation coordinator and explicit rule precedence.
+- Add Why this rate?, preview mode, timed/indefinite pauses, manual holds and recording/presentation-session pause.
+- Add local transition history, user-confirmed blocks for directed transitions, deletion and previewable redacted export.
+- Add monitor-path identity checks, durable transition journals and explicit interrupted-change recovery. Missing monitors no longer redirect rate changes to primary.
+- Yield to observed external rate changes; block unsupported mirrored/ambiguous paths.
+- Migrate settings atomically to schema 3 while retaining existing saver priority; preserve unknown newer schemas.
+- Separate requested brightness from readback, invalidate queued automatic writes when gated, and bind software-dimming cleanup to the original monitor context.
+- Add **Always on top (HzSwitcher)** to other windows' real Windows system menus (title-bar right-click, Alt+Space, window icon), including apps whose custom title bars open the native menu. Selections are matched to the menu's owning window and command ID; the foreground window is never used as a guess. Entries are removed on disable/exit, and only HzSwitcher-owned entries are touched.
+- Split the mouse-menu preference: **Add Always on top to window title-bar menus** (new) and **Enable Shift+right-click menu**. Existing opt-outs carry over. The legacy frame-replacement popup now runs only when native integration is off.
+- This is the first implementation milestone, not the planned independent-monitor release. Hardware acceptance and publication remain open; see docs/AUTOMATION_1_8_DELIVERY.md.
+
 ## 1.7.1 - 2026-10-27
 
 - Right-click a standard title bar or frame to open a window menu with Always on top alongside the app's window commands. Custom title bars retain the Shift+right-click fallback.

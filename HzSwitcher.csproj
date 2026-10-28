@@ -9,7 +9,7 @@
     <AssemblyName>HzSwitcher</AssemblyName>
     <RootNamespace>HzSwitcher</RootNamespace>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.7.1</Version>
+    <Version>1.8.0-beta.1</Version>
     <Product>HzSwitcher</Product>
     <Company>HzSwitcher</Company>
     <Description>Switch monitor refresh rate from a tray app, with idle and video power-saver.</Description>
@@ -21,6 +21,7 @@
     <EmbeddedResource Include="Assets\pin.wav" />
     <EmbeddedResource Include="Assets\unpin.wav" />
     <Compile Remove="tests\**" />
+    <Compile Remove="tools\**" />
     <EmbeddedResource Remove="tests\**" />
     <None Remove="tests\**" />
   </ItemGroup>
@@ -29,6 +30,7 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <InternalsVisibleTo Include="HzSwitcher.Tests" />
+    <InternalsVisibleTo Include="HzSwitcher.Preview" />
   </ItemGroup>
 
 </Project>
