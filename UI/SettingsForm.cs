@@ -3,87 +3,56 @@ using HzSwitcher.UI.Controls;
 
 namespace HzSwitcher.UI;
 
-/// <summary>Advanced settings: timings and the video / game detection lists.</summary>
+/// <summary>Specialist saver timings and video/game detection lists.</summary>
 internal sealed class SettingsForm : DialogShell
 {
-    private readonly Settings _s;
-    private readonly NumberBox _idle = new() { Minimum = 1, Maximum = 240 };
-    private readonly NumberBox _restore = new() { Minimum = 1, Maximum = 60 };
-    private readonly NumberBox _quiet = new() { Minimum = 5, Maximum = 600 };
-    private readonly NumberBox _cooldown = new() { Minimum = 0, Maximum = 300 };
-    private readonly ComboBox _saverHz = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly Toggle _auto = new() { Text = "Enable auto power-saver" };
-    private readonly TextBox _titles = Multi();
-    private readonly TextBox _players = Multi();
-    private readonly TextBox _games = Multi();
+    private readonly Settings _settings;
+    private readonly NumberBox _quiet = new() { Minimum = 5, Maximum = 600, AccessibleName = "Watching rule quiet time in seconds" };
+    private readonly NumberBox _cooldown = new() { Minimum = 0, Maximum = 300, AccessibleName = "Automatic switch cooldown in seconds" };
+    private readonly TextBox _titles = Multi("Video title keywords");
+    private readonly TextBox _players = Multi("Player processes");
+    private readonly TextBox _games = Multi("Never throttle these games");
 
-    public SettingsForm(Settings s, List<int> supportedHz)
-        : base("Advanced settings", new Size(600, 620), "Timings and detection lists for the auto power-saver. One entry per line in the lists.")
+    public SettingsForm(Settings settings, List<int> supportedHz)
+        : base("Detection settings", new Size(600, 560), "One entry per line in the detection lists. Process names may include * wildcards.")
     {
-        _s = s;
-
-        foreach (int hz in supportedHz) _saverHz.Items.Add(hz);
-        _saverHz.SelectedItem = s.SaverHz;
-        if (_saverHz.SelectedItem == null && _saverHz.Items.Count > 0) _saverHz.SelectedIndex = 0;
-        _idle.Value = Math.Clamp(s.IdleMinutes, 1, 240);
-        _restore.Value = Math.Clamp(s.RestoreSeconds, 1, 60);
-        _quiet.Value = Math.Clamp(s.WatchingQuietSeconds, 5, 600);
-        _cooldown.Value = Math.Clamp(s.MinSwitchSeconds, 0, 300);
-        _auto.Checked = s.AutoEnabled;
-        _titles.Text = string.Join(Environment.NewLine, s.WatchTitles);
-        _players.Text = string.Join(Environment.NewLine, s.WatchPlayers);
-        _games.Text = string.Join(Environment.NewLine, s.GameProcesses);
-
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoScroll = true };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-
-        _auto.Margin = new Padding(0, 0, 0, 8);
-        grid.Controls.Add(_auto); grid.SetColumnSpan(_auto, 2);
-        AddRow(grid, "Idle / watching timeout (minutes)", _idle);
-        AddRow(grid, "Restore after continuous activity (seconds)", _restore);
-        AddRow(grid, "Watching rule: no input for (seconds)", _quiet);
-        AddRow(grid, "Automatic switch cooldown (seconds)", _cooldown);
-        AddRow(grid, "Saver refresh rate (Hz)", _saverHz);
-        AddRow(grid, "Video title keywords", _titles, 64);
-        AddRow(grid, "Player processes", _players, 64);
-        AddRow(grid, "Never throttle these games (* allowed)", _games, 64);
-        Body.Controls.Add(grid);
-
-        var open = new PillButton { Text = "Open settings file" };
-        open.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SettingsStore.Path_) { UseShellExecute = true });
-        LeftActions.Controls.Add(open);
+        _settings = settings;
+        _quiet.Value = Math.Clamp(settings.WatchingQuietSeconds, 5, 600);
+        _cooldown.Value = Math.Clamp(settings.MinSwitchSeconds, 0, 300);
+        _titles.Text = string.Join(Environment.NewLine, settings.WatchTitles);
+        _players.Text = string.Join(Environment.NewLine, settings.WatchPlayers);
+        _games.Text = string.Join(Environment.NewLine, settings.GameProcesses);
+        var stack = new LayoutStack { Dock = DockStyle.Top };
+        stack.Controls.Add(MainForm.Setting("Watching quiet time", _quiet, "Seconds with no input before video counts as watching."));
+        stack.Controls.Add(MainForm.Setting("Automatic switch cooldown", _cooldown, "Seconds between automatic rate changes."));
+        AddList(stack, "Video title keywords", _titles);
+        AddList(stack, "Player processes", _players);
+        AddList(stack, "Never throttle these games", _games);
+        Body.Controls.Add(stack);
         Finish();
     }
 
-    private static TextBox Multi() => new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
+    private static TextBox Multi(string name) => new() { Multiline = true, ScrollBars = ScrollBars.Vertical, Height = 72, AccessibleName = name };
 
-    private static void AddRow(TableLayoutPanel grid, string label, Control input, int height = 0)
+    private static void AddList(LayoutStack stack, string title, TextBox input)
     {
-        var l = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left | (height > 0 ? AnchorStyles.Top : AnchorStyles.None), Margin = new Padding(0, 8, 8, 8) };
-        input.Anchor = input is NumberBox ? AnchorStyles.Left : AnchorStyles.Left | AnchorStyles.Right | (height > 0 ? AnchorStyles.Top : AnchorStyles.None);
-        input.Margin = new Padding(0, 4, 0, 4);
-        if (height > 0) input.Height = height;
-        if (input is NumberBox) input.Width = 104;
-        grid.Controls.Add(l);
-        grid.Controls.Add(input);
+        var label = MainForm.TextLabel(title);
+        label.Margin = new Padding(0, 16, 0, 6);
+        input.Margin = Padding.Empty;
+        stack.Controls.Add(label);
+        stack.Controls.Add(input);
     }
 
-    private static List<string> Lines(string text) =>
-        text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    private static List<string> Lines(string text) => text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     protected override bool OnSave()
     {
-        _s.AutoEnabled = _auto.Checked;
-        _s.IdleMinutes = _idle.Value;
-        _s.RestoreSeconds = _restore.Value;
-        _s.WatchingQuietSeconds = _quiet.Value;
-        _s.MinSwitchSeconds = _cooldown.Value;
-        if (_saverHz.SelectedItem is int hz) _s.SaverHz = hz;
-        _s.WatchTitles = Lines(_titles.Text);
-        _s.WatchPlayers = Lines(_players.Text);
-        _s.GameProcesses = Lines(_games.Text);
-        SettingsStore.Save(_s);
+        _settings.WatchingQuietSeconds = _quiet.Value;
+        _settings.MinSwitchSeconds = _cooldown.Value;
+        _settings.WatchTitles = Lines(_titles.Text);
+        _settings.WatchPlayers = Lines(_players.Text);
+        _settings.GameProcesses = Lines(_games.Text);
+        SettingsStore.Save(_settings);
         return true;
     }
 }

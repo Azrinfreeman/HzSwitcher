@@ -40,7 +40,8 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
         if (!e.Item.Selected || !e.Item.Enabled) return;
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        Gfx.FillRound(g, new RectangleF(4, 1, e.Item.Width - 8, e.Item.Height - 2), 6, Theme.SurfaceRaised);
+        Gfx.FillRound(g, new RectangleF(4, 1, e.Item.Width - 8, e.Item.Height - 2), Theme.Dp(e.ToolStrip, 4),
+            Theme.HighContrast ? SystemColors.Highlight : Theme.SurfaceRaised);
     }
 
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
@@ -59,7 +60,7 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
             return;
         }
-        e.TextColor = e.Item.Enabled ? Theme.Text : Theme.TextMuted;
+        e.TextColor = Theme.HighContrast && e.Item.Selected ? SystemColors.HighlightText : e.Item.Enabled ? Theme.Text : Theme.TextMuted;
         base.OnRenderItemText(e);
     }
 
@@ -69,7 +70,7 @@ internal sealed class ThemedMenuRenderer : ToolStripProfessionalRenderer
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var r = e.ImageRectangle;
         float cx = r.Left + r.Width / 2f, cy = r.Top + r.Height / 2f, s = Math.Min(r.Width, r.Height) / 4f;
-        using var p = new Pen(Theme.Accent, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        using var p = new Pen(Theme.HighContrast && e.Item.Selected ? SystemColors.HighlightText : Theme.Accent, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
         g.DrawLines(p, new[] { new PointF(cx - s, cy), new PointF(cx - s / 3, cy + s * 0.8f), new PointF(cx + s, cy - s * 0.7f) });
     }
 

@@ -5,7 +5,7 @@ namespace HzSwitcher.UI;
 
 internal sealed class WindowPinMenu : IDisposable
 {
-    private readonly ContextMenuStrip _menu = new() { BackColor = Theme.Surface, ForeColor = Theme.Text, Renderer = new ThemedMenuRenderer() };
+    private readonly ContextMenuStrip _menu = new() { BackColor = Theme.Surface, ForeColor = Theme.Text, Font = Theme.Font(), Renderer = new ThemedMenuRenderer() };
     public bool IsOpen => _menu.Visible;
     public void Show(WindowIdentity target, Point point, AlwaysOnTopService pins, Func<bool> enabled,
         Action<PinResult> feedback, Action unpinAll, Action settings, bool frameMenu = false)
@@ -15,6 +15,8 @@ internal sealed class WindowPinMenu : IDisposable
         Action<PinResult> feedback, Action unpinAll, Action settings, bool frameMenu = false)
     {
         _menu.Close();
+        _menu.BackColor = Theme.Surface;
+        _menu.ForeColor = Theme.Text;
         var oldItems = _menu.Items.Cast<ToolStripItem>().ToArray();
         _menu.Items.Clear();
         foreach (var item in oldItems) item.Dispose();

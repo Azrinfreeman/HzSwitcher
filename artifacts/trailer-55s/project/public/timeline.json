@@ -1,0 +1,192 @@
+{
+  "fps": 30,
+  "bpm": 120,
+  "total": 1650,
+  "shots": [
+    {
+      "id": "opening",
+      "beats": 12,
+      "title": "Every hertz.\nOn your terms.",
+      "subtitle": "HzSwitcher",
+      "visual": "display240",
+      "from": 0,
+      "duration": 180
+    },
+    {
+      "id": "rates",
+      "beats": 10,
+      "title": "Change your\nrefresh rate.",
+      "subtitle": "One click. A different pace.",
+      "visual": "display240",
+      "from": 180,
+      "duration": 150
+    },
+    {
+      "id": "shortcuts",
+      "beats": 8,
+      "title": "A preset.\nA shortcut.",
+      "subtitle": "Your settings, within reach.",
+      "visual": "shortcuts",
+      "from": 330,
+      "duration": 120
+    },
+    {
+      "id": "profiles",
+      "beats": 10,
+      "title": "A rate for\neach app.",
+      "subtitle": "App profiles",
+      "visual": "profiles",
+      "from": 450,
+      "duration": 150
+    },
+    {
+      "id": "brightness",
+      "beats": 10,
+      "title": "Brightness,\nwithin reach.",
+      "subtitle": "Control the selected display.",
+      "visual": "brightness70",
+      "from": 600,
+      "duration": 150
+    },
+    {
+      "id": "saver",
+      "beats": 12,
+      "title": "Step away.\nLet it ease down.",
+      "subtitle": "Automatic power saver",
+      "visual": "automation",
+      "from": 750,
+      "duration": 180
+    },
+    {
+      "id": "pause",
+      "beats": 8,
+      "title": "Pause on\nyour terms.",
+      "subtitle": "Automation can wait.",
+      "visual": "paused",
+      "from": 930,
+      "duration": 120
+    },
+    {
+      "id": "pin",
+      "beats": 10,
+      "title": "Keep what matters\non top.",
+      "subtitle": "Always on top",
+      "visual": "general",
+      "from": 1050,
+      "duration": 150
+    },
+    {
+      "id": "diagnostics",
+      "beats": 10,
+      "title": "See what's\nhappening.",
+      "subtitle": "Local diagnostics. Read-only.",
+      "visual": "diagnostics",
+      "from": 1200,
+      "duration": 150
+    },
+    {
+      "id": "ensemble",
+      "beats": 8,
+      "title": "Small app.\nMore control.",
+      "subtitle": "Made for your workflow.",
+      "visual": "display240",
+      "from": 1350,
+      "duration": 120
+    },
+    {
+      "id": "outro",
+      "beats": 12,
+      "title": "HzSwitcher",
+      "subtitle": "Built for your Windows display.",
+      "visual": "icon",
+      "from": 1470,
+      "duration": 180
+    }
+  ],
+  "sfx": [
+    {
+      "id": "reveal",
+      "from": 24,
+      "duration": 48,
+      "src": "audio/transition-soft.mp3",
+      "volume": 0.34
+    },
+    {
+      "id": "rateclick",
+      "from": 255,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.55
+    },
+    {
+      "id": "keytap",
+      "from": 390,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.44
+    },
+    {
+      "id": "profileslide",
+      "from": 525,
+      "duration": 25,
+      "src": "audio/sweep-fast-small.mp3",
+      "volume": 0.24
+    },
+    {
+      "id": "sliderstart",
+      "from": 645,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.28
+    },
+    {
+      "id": "saverdrop",
+      "from": 825,
+      "duration": 40,
+      "src": "audio/bass-hit-short.mp3",
+      "volume": 0.17
+    },
+    {
+      "id": "saverrestore",
+      "from": 885,
+      "duration": 25,
+      "src": "audio/sweep-fast-small.mp3",
+      "volume": 0.21
+    },
+    {
+      "id": "pausestop",
+      "from": 960,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.38
+    },
+    {
+      "id": "pin",
+      "from": 1110,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.48
+    },
+    {
+      "id": "diagnostics",
+      "from": 1230,
+      "duration": 12,
+      "src": "audio/switch-click-quick.mp3",
+      "volume": 0.32
+    },
+    {
+      "id": "ensemble",
+      "from": 1365,
+      "duration": 48,
+      "src": "audio/transition-soft.mp3",
+      "volume": 0.28
+    },
+    {
+      "id": "lockup",
+      "from": 1507,
+      "duration": 45,
+      "src": "audio/bass-hit-short.mp3",
+      "volume": 0.25
+    }
+  ]
+}

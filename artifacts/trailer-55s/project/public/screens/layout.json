@@ -1,0 +1,273 @@
+{
+  "display240": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_rates": {
+        "x": 384,
+        "y": 426,
+        "w": 1096,
+        "h": 96
+      },
+      "_presets": {
+        "x": 384,
+        "y": 706,
+        "w": 1096,
+        "h": 81
+      },
+      "_bri": {
+        "x": 488,
+        "y": 917,
+        "w": 888,
+        "h": 88
+      },
+      "_briValue": {
+        "x": 1394,
+        "y": 835,
+        "w": 86,
+        "h": 58
+      },
+      "_big": {
+        "x": 1264,
+        "y": 321,
+        "w": 216,
+        "h": 89
+      },
+      "_monitor": {
+        "x": 352,
+        "y": 156,
+        "w": 1160,
+        "h": 45
+      },
+      "_displayStatus": {
+        "x": 352,
+        "y": 1061,
+        "w": 1160,
+        "h": 0
+      }
+    }
+  },
+  "display120": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "display60": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness70": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness68": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness66": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness64": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness62": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness60": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness58": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness56": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness54": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness52": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness50": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness48": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness46": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness44": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness42": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "brightness40": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "automation": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_idle": {
+        "x": 1197,
+        "y": 424,
+        "w": 224,
+        "h": 72
+      },
+      "_saverHz": {
+        "x": 1235,
+        "y": 616,
+        "w": 260,
+        "h": 45
+      },
+      "_auto": {
+        "x": 1457,
+        "y": 290,
+        "w": 38,
+        "h": 26
+      },
+      "_pauseAction": {
+        "x": 1338,
+        "y": 169,
+        "w": 141,
+        "h": 65
+      },
+      "_manageProfiles": {
+        "x": 352,
+        "y": 1106,
+        "w": 269,
+        "h": 65
+      }
+    }
+  },
+  "paused": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_pauseAction": {
+        "x": 1333,
+        "y": 169,
+        "w": 146,
+        "h": 65
+      },
+      "_pauseStatus": {
+        "x": 352,
+        "y": 266,
+        "w": 1143,
+        "h": 44
+      }
+    }
+  },
+  "profiles": {
+    "width": 1360,
+    "height": 840,
+    "elements": {}
+  },
+  "profileactive": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_displayStatus": {
+        "x": 352,
+        "y": 1061,
+        "w": 1160,
+        "h": 0
+      }
+    }
+  },
+  "saver": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_displayStatus": {
+        "x": 352,
+        "y": 1061,
+        "w": 1160,
+        "h": 0
+      }
+    }
+  },
+  "restored": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {}
+  },
+  "shortcuts": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_hotkeys": {
+        "x": 352,
+        "y": 153,
+        "w": 1160,
+        "h": 368
+      }
+    }
+  },
+  "general": {
+    "width": 1560,
+    "height": 1120,
+    "elements": {
+      "_alwaysOnTop": {
+        "x": 1474,
+        "y": 527,
+        "w": 38,
+        "h": 26
+      },
+      "_alwaysOnTopStatus": {
+        "x": 352,
+        "y": 593,
+        "w": 1160,
+        "h": 81
+      }
+    }
+  },
+  "pinsettings": {
+    "width": 1160,
+    "height": 1000,
+    "elements": {}
+  },
+  "diagnostics": {
+    "width": 1320,
+    "height": 1200,
+    "elements": {}
+  },
+  "notes": {
+    "width": 960,
+    "height": 640,
+    "elements": {}
+  }
+}

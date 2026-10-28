@@ -27,7 +27,7 @@ internal sealed class NumberBox : Control
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
         TabStop = true;
-        Size = new Size(104, 30);
+        Size = new Size(112, 36);
         Cursor = Cursors.IBeam;
         AccessibleRole = AccessibleRole.SpinButton;
     }
@@ -41,7 +41,7 @@ internal sealed class NumberBox : Control
         public override string Value
         {
             get => _owner.Value.ToString();
-            set { if (int.TryParse(value, out int v)) _owner.Value = v; }
+            set { if (_owner.Enabled && int.TryParse(value, out int v)) _owner.Value = v; }
         }
     }
 
@@ -51,6 +51,7 @@ internal sealed class NumberBox : Control
         Invalidate();
         if (v == _value) return;
         _value = v;
+        AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
         ValueChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -86,7 +87,8 @@ internal sealed class NumberBox : Control
     {
         Focus();
         int h = HitTest(e.Location);
-        if (h == 1) Step(-1); else if (h == 2) Step(1);
+        if (e.Button == MouseButtons.Left)
+        { if (h == 1) Step(-1); else if (h == 2) Step(1); }
         base.OnMouseDown(e);
     }
     protected override void OnMouseWheel(MouseEventArgs e) { Step(e.Delta > 0 ? 1 : -1); base.OnMouseWheel(e); }
@@ -135,10 +137,10 @@ internal sealed class NumberBox : Control
         g.Clear(Parent?.BackColor ?? Theme.Surface);
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        float radius = Theme.Dp(this, 6);
+        float radius = Theme.Dp(this, 4);
         var box = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         Gfx.FillRound(g, box, radius, Theme.Input);
-        Gfx.StrokeRound(g, box, radius, Focused ? Theme.Accent : Theme.Border, Focused ? 1.5f : 1f);
+        Gfx.StrokeRound(g, box, radius, Focused ? Theme.Accent : Theme.InputBorder, Focused ? 1.5f : 1f);
 
         string text = _edit ?? _value.ToString();
         var textRect = new Rectangle(Theme.Dp(this, 10), 0, Width - 2 * Height, Height);

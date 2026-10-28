@@ -13,7 +13,7 @@ internal sealed class PresetsForm : DialogShell
 
     public PresetsForm(Settings s, List<int> supported)
         : base("Edit presets", new Size(480, 420),
-               "Presets show as one-click buttons and can be used by hotkeys. If a monitor doesn't support a rate, the nearest one is used.")
+               "Use a blank name to remove a preset. Unsupported rates use the nearest available rate.")
     {
         _s = s;
 
@@ -25,8 +25,8 @@ internal sealed class PresetsForm : DialogShell
         for (int i = 0; i < Rows; i++)
         {
             var preset = i < s.Presets.Count ? s.Presets[i] : null;
-            _names[i] = new TextBox { Dock = DockStyle.Fill, Text = preset?.Name ?? "", MaxLength = 24, Margin = new Padding(0, 3, 4, 3) };
-            _rates[i] = new ComboBox { Dock = DockStyle.Fill, Margin = new Padding(4, 3, 0, 3) };
+            _names[i] = new TextBox { Dock = DockStyle.Fill, Text = preset?.Name ?? "", AccessibleName = $"Preset {i + 1} name", MaxLength = 24, Margin = new Padding(0, 6, 8, 6) };
+            _rates[i] = new ComboBox { Dock = DockStyle.Fill, AccessibleName = $"Preset {i + 1} refresh rate", Margin = new Padding(0, 6, 0, 6) };
             RateChoice.Fill(_rates[i], supported, preset?.Hz ?? 0);
             grid.Controls.Add(_names[i]);
             grid.Controls.Add(_rates[i]);
@@ -41,7 +41,9 @@ internal sealed class PresetsForm : DialogShell
         for (int i = 0; i < Rows; i++)
         {
             string name = _names[i].Text.Trim();
-            if (name.Length == 0 || list.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+            if (name.Length == 0) continue;
+            if (list.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                return ShowError(_names[i], "Preset names must be unique.");
             list.Add(new Preset { Name = name, Hz = RateChoice.Value(_rates[i]) });
         }
         _s.Presets = list;

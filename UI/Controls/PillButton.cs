@@ -1,6 +1,6 @@
 namespace HzSwitcher.UI.Controls;
 
-internal enum PillStyle { Neutral, Primary, Danger }
+internal enum PillStyle { Neutral, Primary, Danger, Quiet }
 
 /// <summary>Rounded button. Neutral by default; Selected (or Primary) uses the accent color.</summary>
 internal sealed class PillButton : Button
@@ -12,7 +12,17 @@ internal sealed class PillButton : Button
 
     /// <summary>Shows the button as the current choice (filled with the accent).</summary>
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool Selected { get => _selected; set { _selected = value; AccessibleDescription = value ? "Selected" : null; Invalidate(); } }
+    public bool Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_selected == value) return;
+            _selected = value;
+            AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
+            Invalidate();
+        }
+    }
 
     public PillButton()
     {
@@ -29,7 +39,18 @@ internal sealed class PillButton : Button
     public override Size GetPreferredSize(Size proposedSize)
     {
         var t = TextRenderer.MeasureText(Text, Font, new Size(int.MaxValue, 0), TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
-        return new Size(Math.Max(t.Width + Padding.Horizontal, Theme.Dp(this, 34)), t.Height + Padding.Vertical);
+        return new Size(Math.Max(t.Width + Padding.Horizontal + (Parent is ChipGroup ? Theme.Dp(this, 18) : 0), Theme.Dp(this, 36)),
+            Math.Max(Theme.Dp(this, 36), t.Height + Padding.Vertical));
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new ChoiceAccessible(this);
+
+    private sealed class ChoiceAccessible(PillButton owner) : ControlAccessibleObject(owner)
+    {
+        public override AccessibleRole Role => owner.Parent is ChipGroup ? AccessibleRole.RadioButton : AccessibleRole.PushButton;
+        public override string DefaultAction => "Press";
+        public override void DoDefaultAction() { if (owner.Enabled) owner.PerformClick(); }
+        public override AccessibleStates State => base.State | (owner.Parent is ChipGroup && owner.Selected ? AccessibleStates.Checked : 0);
     }
 
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
@@ -46,6 +67,7 @@ internal sealed class PillButton : Button
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.Space) { _down = true; Invalidate(); }
         if (Parent is ChipGroup group && IsArrow(e.KeyData))
         {
             group.MoveFocus(this, e.KeyCode is Keys.Left or Keys.Up ? -1 : 1);
@@ -55,6 +77,8 @@ internal sealed class PillButton : Button
         base.OnKeyDown(e);
     }
 
+    protected override void OnKeyUp(KeyEventArgs e) { _down = false; Invalidate(); base.OnKeyUp(e); }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
@@ -63,6 +87,7 @@ internal sealed class PillButton : Button
 
         Color fill = Style == PillStyle.Danger ? Theme.Danger
                    : Style == PillStyle.Primary || _selected ? Theme.Accent
+                   : Style == PillStyle.Quiet ? Parent?.BackColor ?? Theme.Bg
                    : Theme.SurfaceRaised;
         Color text = Style == PillStyle.Danger ? Color.White
                    : Style == PillStyle.Primary || _selected ? Theme.AccentText
@@ -70,13 +95,21 @@ internal sealed class PillButton : Button
         if (!Enabled) { fill = Theme.SurfaceRaised; text = Theme.TextMuted; }
         else if (_down) fill = Theme.Shift(fill, -0.12f);
         else if (_hover) fill = Theme.Shift(fill, 0.12f);
+        if (Enabled && (Style is PillStyle.Primary or PillStyle.Danger || _selected))
+        {
+            if (Theme.HighContrast) { fill = SystemColors.Highlight; text = SystemColors.HighlightText; }
+            else text = Theme.ReadableText(fill);
+        }
 
-        float radius = Theme.Dp(this, 8);
+        float radius = Theme.Dp(this, 4);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         Gfx.FillRound(g, r, radius, fill);
+        if (Style != PillStyle.Quiet && !_selected && Style != PillStyle.Primary)
+            Gfx.StrokeRound(g, r, radius, Theme.InputBorder, 1f);
         if (Focused && ShowFocusCues)
             Gfx.StrokeRound(g, RectangleF.Inflate(r, -1.5f, -1.5f), radius - 1, Theme.Text, 2f);
-        TextRenderer.DrawText(g, Text, Font, ClientRectangle, text,
+        string caption = Parent is ChipGroup ? (_selected ? Text + " ✓" : Text + "   ") : Text;
+        TextRenderer.DrawText(g, caption, Font, ClientRectangle, text,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }

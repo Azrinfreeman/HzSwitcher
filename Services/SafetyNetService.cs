@@ -15,6 +15,7 @@ public class SafetyNetService : IDisposable
     private int _expectedHz;
     private string _expectedDevice;
     private bool _verifying;
+    public event Action<OperationFailure> Failed;
 
     public SafetyNetService(IDisplay display, Settings settings, Func<string> device = null)
     {
@@ -36,9 +37,11 @@ public class SafetyNetService : IDisposable
     public void RecoverIfNeeded()
     {
         if (!_settings.PendingChange) return;
+        string device = _device();
         int fb = FallbackHz();
         Log.Write($"Recovering from unfinished change; resetting to {fb} Hz");
-        if (_display.GetCurrentHz() != fb) _display.TryApply(fb);
+        if (_display.GetCurrentHz() != fb && (!_display.TryApply(fb) || _display.GetCurrentHz() != fb))
+            ReportFailure(device, FailureKind.FallbackFailed, fb);
         _settings.PendingChange = false;
         SettingsStore.Save(_settings);
     }
@@ -60,9 +63,17 @@ public class SafetyNetService : IDisposable
         _settings.PendingChange = true;       // cleared once the mode has held (or been reset)
         SettingsStore.Save(_settings);
 
-        bool ok = _display.TryApply(hz) && _display.GetCurrentHz() == hz;
+        bool accepted = _display.TryApply(hz);
+        if (_device() != device)
+        {
+            ReportFailure(device, FailureKind.Rejected, hz);
+            CancelVerification();
+            return false;
+        }
+        bool ok = accepted && _display.GetCurrentHz() == hz;
         if (!ok)
         {
+            ReportFailure(device, FailureKind.Rejected, hz);
             if (before > 0 && _display.GetCurrentHz() == before)
             {
                 Log.Write($"{hz} Hz was rejected; keeping the unchanged {before} Hz mode");
@@ -99,13 +110,16 @@ public class SafetyNetService : IDisposable
             return;
         }
         Log.Write($"Display did not hold {_expectedHz} Hz (now {now}); resetting to fallback");
+        ReportFailure(_expectedDevice, FailureKind.DidNotHold, _expectedHz);
         ResetToFallback();
     }
 
     private void ResetToFallback()
     {
+        string device = _device();
         int fb = FallbackHz();
-        if (_display.GetCurrentHz() != fb) _display.TryApply(fb);
+        if (_display.GetCurrentHz() != fb && (!_display.TryApply(fb) || _display.GetCurrentHz() != fb))
+            ReportFailure(device, FailureKind.FallbackFailed, fb);
         CancelVerification();
     }
 
@@ -118,4 +132,7 @@ public class SafetyNetService : IDisposable
     }
 
     public void Dispose() => _verify.Dispose();
+
+    private void ReportFailure(string device, FailureKind kind, int target) => Failed?.Invoke(new(
+        device, OperationKind.RefreshRate, kind, target, _device() == device ? _display.GetCurrentHz() : null, DateTimeOffset.UtcNow));
 }

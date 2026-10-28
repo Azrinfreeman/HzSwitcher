@@ -18,24 +18,24 @@ internal sealed class HotkeysForm : DialogShell
 
     private readonly Settings _s;
     private readonly List<int> _supported;
-    private readonly FlowLayoutPanel _list = new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(0, 4, 0, 0) };
+    private readonly LayoutStack _list = new() { Dock = DockStyle.Fill, AutoSize = false, AutoScroll = true };
     private readonly List<Row> _rows = new();
 
     private sealed class Row
     {
-        public FlowLayoutPanel Panel;
+        public TableLayoutPanel Panel;
         public TextBox Keys;
         public ComboBox Action, Param;
     }
 
     public HotkeysForm(Settings s, List<int> supported)
-        : base("Edit hotkeys", new Size(720, 440),
-               "Click a key box, then press the combination (needs Ctrl, Alt or Shift). Backspace clears it.")
+        : base("Edit shortcuts", new Size(760, 440),
+               "Focus a shortcut field and press a combination with Ctrl, Alt or Shift. Backspace clears it; Tab moves to the next field.")
     {
         _s = s;
         _supported = supported;
 
-        var add = new PillButton { Text = "Add hotkey" };
+        var add = new PillButton { Text = "Add shortcut" };
         add.Click += (_, _) => AddRow(new HotkeyBinding { Action = "Preset", Preset = _s.Presets.FirstOrDefault()?.Name ?? "" });
         LeftActions.Controls.Add(add);
 
@@ -51,14 +51,18 @@ internal sealed class HotkeysForm : DialogShell
 
     private void AddRow(HotkeyBinding b)
     {
-        var row = new Row { Panel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 0, 0, 6) } };
-        row.Keys = new TextBox { Width = Theme.Dp(this, 150), ReadOnly = true, Text = b.Keys, Cursor = Cursors.Hand, Margin = new Padding(0, 3, 8, 0) };
+        var row = new Row { Panel = new TableLayoutPanel { AutoSize = true, ColumnCount = 4, Margin = new Padding(0, 0, 0, 8) } };
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.Keys = new TextBox { Dock = DockStyle.Fill, AccessibleName = "Shortcut combination", AccessibleDescription = "Press a combination with Control, Alt or Shift. Backspace clears. Tab moves on.", ReadOnly = true, Text = b.Keys, Cursor = Cursors.Hand, Margin = new Padding(0, 3, 8, 0) };
         row.Keys.KeyDown += CaptureKey;
-        row.Action = new ComboBox { Width = Theme.Dp(this, 220), DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 3, 8, 0) };
+        row.Action = new ComboBox { Dock = DockStyle.Fill, AccessibleName = "Shortcut action", DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 3, 8, 0) };
         foreach (var a in Actions) row.Action.Items.Add(a.Label);
         row.Action.SelectedIndex = Math.Max(0, Array.FindIndex(Actions, a => a.Code == b.Action));
-        row.Param = new ComboBox { Width = Theme.Dp(this, 140), DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 3, 8, 0) };
-        var remove = new PillButton { Text = "Remove", Margin = new Padding(0) };
+        row.Param = new ComboBox { Dock = DockStyle.Fill, AccessibleName = "Shortcut target", DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 3, 8, 0) };
+        var remove = new PillButton { Text = "Remove", AccessibleName = "Remove shortcut " + b.Keys, Margin = new Padding(0) };
 
         void FillParam(string code, HotkeyBinding src)
         {
@@ -87,8 +91,10 @@ internal sealed class HotkeysForm : DialogShell
         Theme.Style(row.Panel);
     }
 
-    private static void CaptureKey(object sender, KeyEventArgs e)
+    internal static void CaptureKey(object sender, KeyEventArgs e)
     {
+        if (e.Modifiers == Keys.None && e.KeyCode is Keys.Tab or Keys.Escape or Keys.Enter) return;
+        if (e.Modifiers == Keys.Shift && e.KeyCode == Keys.Tab) return;
         e.SuppressKeyPress = true;
         e.Handled = true;
         var box = (TextBox)sender;
@@ -114,16 +120,16 @@ internal sealed class HotkeysForm : DialogShell
             string code = Actions[Math.Max(0, r.Action.SelectedIndex)].Code;
             var b = new HotkeyBinding { Keys = r.Keys.Text, Action = code };
             if (code == "Preset") b.Preset = r.Param.SelectedItem as string ?? "";
+            if (code is "Preset" or "SetHz" && r.Param.SelectedIndex < 0)
+                return ShowError(r.Action, "Choose a target for this shortcut. Add a preset first if none are available.");
             if (code == "SetHz" && r.Param.SelectedItem is string t) b.Hz = int.Parse(t.Split(' ')[0]);
             if (!HotkeyWindow.TryParse(b.Keys, out uint mods, out uint key))
             {
-                MessageBox.Show(this, $"Invalid shortcut: {b.Keys}", "Hotkeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
+                return ShowError(r.Keys, $"Invalid shortcut: {b.Keys}. Use Ctrl, Alt or Shift with a key.");
             }
             if (list.Any(x => HotkeyWindow.TryParse(x.Keys, out uint m, out uint k) && m == mods && k == key))
             {
-                MessageBox.Show(this, $"{b.Keys} is used twice.", "Hotkeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
+                return ShowError(r.Keys, $"{b.Keys} is used twice. Choose a different combination.");
             }
             list.Add(b);
         }

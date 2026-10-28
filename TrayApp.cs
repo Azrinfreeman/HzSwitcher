@@ -21,6 +21,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly MediaDetector _media;
     private readonly AutoSaverService _auto;
     private readonly ProfileService _profiles;
+    private readonly AutomationPauseService _pause = new();
+    private readonly DiagnosticsService _diagnostics = new();
     private AlwaysOnTopService _alwaysOnTop;
     private string _alwaysOnTopFailure;
     private WindowPinInteractionGuard _pinGuard;
@@ -37,6 +39,7 @@ internal sealed class TrayApp : ApplicationContext
     private RegisteredWaitHandle _showWait;
     private IntPtr _iconHandle;
     private int _preSaverBrightness = -1;
+    private string _saverBrightnessDevice;
     private bool _brightnessDirty;
     private ThemedSlider _trayBar;
     private Label _trayBarLabel;
@@ -46,6 +49,7 @@ internal sealed class TrayApp : ApplicationContext
     internal BrightnessService Brightness => _brightness;
     internal AutoSaverService Auto => _auto;
     internal ProfileService Profiles => _profiles;
+    internal AutomationPauseService Pause => _pause;
 
     public TrayApp(bool startHidden)
     {
@@ -55,26 +59,35 @@ internal sealed class TrayApp : ApplicationContext
         _brightness = new BrightnessService(() => _display.Device,
             key => _settings.MonitorBrightness.TryGetValue(key, out int v) ? v : -1);
         _brightness.Changed += OnBrightnessChanged;
+        _brightness.Failed += _diagnostics.Record;
         _safety = new SafetyNetService(_display, _settings, () => _display.Device);
+        _safety.Failed += failure =>
+        {
+            _diagnostics.Record(failure);
+            if (!_ui.IsDisposed) _ui.BeginInvoke(RefreshTray);
+        };
         _safety.RecoverIfNeeded();
 
         _media = new MediaDetector(() => _settings);
-        _auto = new AutoSaverService(() => _settings, _display, _media, _ui, apply: _safety.Apply);
+        _auto = new AutoSaverService(() => _settings, _display, _media, _ui, apply: _safety.Apply,
+            pause: _pause, device: () => _display.Device);
         _auto.Changed += RefreshTray;
         _auto.Notice += OnNotice;
         _auto.SaverStarted += OnSaverStarted;
         _auto.SaverEnded += OnSaverEnded;
-        _profiles = new ProfileService(() => _settings, _display, _auto, hz => { bool ok = _safety.Apply(hz); RefreshTray(); return ok; });
+        _profiles = new ProfileService(() => _settings, _display, _auto, hz => { bool ok = _safety.Apply(hz); RefreshTray(); return ok; },
+            pause: _pause, device: () => _display.Device);
         _profiles.Notice += OnNotice;
         _profiles.Changed += RefreshTray;
         _main = new MainForm(this);
+        _pause.Changed += RefreshTray;
         if (_settings.AlwaysOnTopEnabled) InitializeAlwaysOnTop();
 
         var menu = new ContextMenuStrip();
         ToolStripManager.Renderer = new ThemedMenuRenderer();
         menu.BackColor = Theme.Surface;
         menu.ForeColor = Theme.Text;
-        menu.Font = new Font("Segoe UI", 10f);
+        menu.Font = Theme.Font();
         Theme.RoundCorners(menu);
         menu.Opening += (_, _) => BuildMenu(menu);
         menu.Closed += (_, _) => CommitBrightness();
@@ -82,7 +95,14 @@ internal sealed class TrayApp : ApplicationContext
         _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowMain(); };
 
         Theme.Watch();
-        Theme.AccentChanged += () => _ui.BeginInvoke(RefreshTray);
+        Theme.AccentChanged += () => _ui.BeginInvoke(() =>
+        {
+            foreach (Form form in Application.OpenForms)
+            { Theme.Apply(form); Theme.RoundCorners(form); form.Invalidate(true); }
+            menu.BackColor = Theme.Surface;
+            menu.ForeColor = Theme.Text;
+            RefreshTray();
+        });
         _hotkeys.HotkeyPressed += OnHotkey;
         var failed = ApplyHotkeys();
         if (failed.Count > 0) Balloon("Hotkey unavailable", "Could not register: " + string.Join(", ", failed));
@@ -205,6 +225,7 @@ internal sealed class TrayApp : ApplicationContext
         int target = _settings.SaverBrightness;
         if (target < 0 || !_brightness.IsSupported) return;
         _preSaverBrightness = _brightness.Get();
+        _saverBrightnessDevice = _display.Device;
         _settings.PendingBrightness = _preSaverBrightness;
         SettingsStore.Save(_settings);
         _brightness.RequestSet(target);
@@ -213,8 +234,10 @@ internal sealed class TrayApp : ApplicationContext
     private void OnSaverEnded()
     {
         if (_preSaverBrightness < 0) return;
-        _brightness.RequestSet(_preSaverBrightness);
+        if (_saverBrightnessDevice == _display.Device) _brightness.RequestSet(_preSaverBrightness);
+        else Log.Write("Skipped stale saver brightness restoration after monitor change");
         _preSaverBrightness = -1;
+        _saverBrightnessDevice = null;
         _settings.PendingBrightness = -1;
         SettingsStore.Save(_settings);
     }
@@ -256,8 +279,7 @@ internal sealed class TrayApp : ApplicationContext
         };
         bar.Value = Math.Clamp(level, bar.Minimum, bar.Maximum);
         bar.Scroll += (_, _) => { SetBrightness(bar.Value); label.Text = BrightnessLabel(bar.Value); };
-        bar.MouseUp += (_, _) => CommitBrightness();
-        bar.KeyUp += (_, _) => CommitBrightness();
+        bar.InteractionCompleted += (_, _) => CommitBrightness();
         panel.Controls.Add(label);
         panel.Controls.Add(bar);
         _trayBar = bar;
@@ -478,12 +500,14 @@ internal sealed class TrayApp : ApplicationContext
         var profiles = new ToolStripMenuItem("App profiles") { Checked = _settings.ProfilesEnabled };
         profiles.Click += (_, _) => { _settings.ProfilesEnabled = !_settings.ProfilesEnabled; SettingsStore.Save(_settings); RefreshTray(); };
         menu.Items.Add(profiles);
+        AddPauseItems(menu.Items);
 
         var startup = new ToolStripMenuItem("Start with Windows") { Checked = IsStartupEnabled() };
         startup.Click += (_, _) => SetStartup(!IsStartupEnabled());
         menu.Items.Add(startup);
 
         menu.Items.Add("Advanced settings…", null, (_, _) => ShowAdvancedSettings());
+        menu.Items.Add("Diagnostics…", null, (_, _) => ShowDiagnostics());
         menu.Items.Add("Open log", null, (_, _) => OpenLog());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
@@ -529,6 +553,73 @@ internal sealed class TrayApp : ApplicationContext
     }
     internal void ExitSaverNow() { _auto.ExitSaver("auto disabled"); RefreshTray(); }
     internal void OpenLog() => OpenPath(Log.FilePath);
+    internal void OpenSettingsFile() => OpenPath(SettingsStore.Path_);
+    internal void PauseAutomation(TimeSpan? duration)
+    {
+        _pause.Pause(duration);
+        RetryAutomationRestore();
+    }
+
+    internal void RetryAutomationRestore()
+    {
+        RestoreAutomationForPause(_pause, _auto, _profiles);
+        RefreshTray();
+    }
+
+    // Saver may have captured a profile rate, so release it first and stop on failure.
+    internal static void RestoreAutomationForPause(AutomationPauseService pause, AutoSaverService saver, ProfileService profiles)
+    {
+        if (!pause.IsPaused) return;
+        bool restored = saver.ReleaseForPause() != AutomationReleaseResult.Failed;
+        if (restored) restored = profiles.ReleaseForPause() != AutomationReleaseResult.Failed;
+        pause.SetRestorationPending(!restored);
+    }
+
+    internal void ResumeAutomation()
+    {
+        if (_pause.RestorationPending) RetryAutomationRestore();
+        _pause.Resume();
+    }
+
+    internal void AddPauseItems(ToolStripItemCollection items)
+    {
+        var pause = new ToolStripMenuItem("Pause automation");
+        AddPauseChoices(pause.DropDownItems);
+        items.Add(pause);
+        if (_pause.IsPaused) items.Add("Resume automation", null, (_, _) => ResumeAutomation());
+        if (_pause.RestorationPending) items.Add("Retry restore", null, (_, _) => RetryAutomationRestore());
+    }
+
+    internal void AddPauseChoices(ToolStripItemCollection items)
+    {
+        foreach (var option in new[] { ("15 minutes", (TimeSpan?)TimeSpan.FromMinutes(15)),
+            ("1 hour", (TimeSpan?)TimeSpan.FromHours(1)), ("Until restart", (TimeSpan?)null) })
+        {
+            var duration = option.Item2;
+            var item = new ToolStripMenuItem(option.Item1) { Checked = _pause.IsPaused && _pause.Duration == duration };
+            item.Click += (_, _) => PauseAutomation(duration);
+            items.Add(item);
+        }
+    }
+
+    internal void ShowDiagnostics()
+    {
+        using var form = new DiagnosticsForm(CaptureDiagnostics, () => _brightness.RefreshAsync());
+        form.ShowDialog(_main.Visible ? _main : null);
+    }
+
+    internal DiagnosticsSnapshot CaptureDiagnostics()
+    {
+        string device = _display.Device;
+        string label = _display.GetMonitors().FirstOrDefault(m => m.Device == device)?.Label ?? "Monitor unavailable";
+        var supported = _display.GetSupportedHz();
+        return new(DateTimeOffset.UtcNow, Application.ProductVersion, Environment.OSVersion.VersionString,
+            System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(), label, _profiles.ActiveProcess,
+            _display.CurrentModeText().Split(" @ ")[0], _display.GetCurrentHz(), supported,
+            _settings.FallbackHz, _safety.FallbackHz(), _brightness.GetSnapshot(), _settings.AutoEnabled,
+            _settings.ProfilesEnabled, _pause.Mode, _pause.ResumesAt, _pause.RestorationPending,
+            _auto.State, _auto.Reason, _profiles.Reason, _auto.AutomaticSwitchWaitSeconds, _diagnostics.FailureFor(device));
+    }
     internal void Hint(string title, string text) => Balloon(title, text);
 
     internal void ShowAdvancedSettings()
@@ -545,10 +636,10 @@ internal sealed class TrayApp : ApplicationContext
         RefreshTray();
     }
 
-    internal void EditHotkeys()
+    internal void EditHotkeys(Form owner = null)
     {
         using var form = new HotkeysForm(_settings, _display.GetSupportedHz());
-        if (form.ShowDialog(_main.Visible ? _main : null) == DialogResult.OK)
+        if (form.ShowDialog(owner ?? (_main.Visible ? _main : null)) == DialogResult.OK)
         {
             var failed = ApplyHotkeys();
             if (failed.Count > 0) Balloon("Hotkey unavailable", "Could not register: " + string.Join(", ", failed));
@@ -567,7 +658,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         _main?.RefreshAll();
         int hz = _display.GetCurrentHz();
-        string state = !_settings.AutoEnabled ? "auto off" : _auto.State == SaverState.Saver ? $"saver, restores {_auto.RestoreHz}" : "auto on";
+        string state = _pause.IsPaused ? "automation paused" : !_settings.AutoEnabled ? "auto off" : _auto.State == SaverState.Saver ? $"saver, restores {_auto.RestoreHz}" : "auto on";
         if (_profiles.ActiveProcess != null) state += $", profile {_profiles.ActiveProcess}";
         string text = $"HzSwitcher: {hz} Hz ({state})";
         _tray.Text = text.Length > 63 ? text[..63] : text;

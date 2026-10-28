@@ -25,6 +25,12 @@ public class AutoSaverService : IDisposable
     private DateTime _lastRestore = DateTime.MinValue;
     private DateTime _lastExternalCheck = DateTime.MinValue;
     private bool _locked;
+    private readonly AutomationPauseService _pause;
+    private readonly Func<string> _device;
+    private string _ownedDevice;
+    private int _appliedHz;
+    private DateTime? _qualifiedAfter;
+    private bool _wasPaused;
 
     public SaverState State { get; private set; } = SaverState.Active;
     public int RestoreHz { get; private set; }
@@ -34,16 +40,20 @@ public class AutoSaverService : IDisposable
     public string Status { get; private set; } = "Starting…";
     /// <summary>0..1 progress toward dropping (when active) or toward restoring (when in saver).</summary>
     public double Progress { get; private set; }
+    public AutomationReason Reason { get; private set; } = AutomationReason.Starting;
     public event Action Changed;
     /// <summary>Raised after the saver rate was applied, and when the saver state ends for any reason.</summary>
     public event Action SaverStarted;
     public event Action SaverEnded;
+    /// <summary>Existing automation ownership was superseded by an external rate or monitor change.</summary>
+    public event Action OwnershipSuperseded;
     /// <summary>Raised after an automatic switch so the UI can show a toast.</summary>
     public event Action<string> Notice;
 
     /// <param name="ui">UI control for marshaling system events. Pass null in tests: no timer or system hooks are started and Tick() is driven by hand.</param>
     public AutoSaverService(Func<Settings> settings, IDisplay display, IMediaInfo media, Control ui = null,
-                            IActivity activity = null, IClock clock = null, Func<int, bool> apply = null)
+                            IActivity activity = null, IClock clock = null, Func<int, bool> apply = null,
+                            AutomationPauseService pause = null, Func<string> device = null)
     {
         _settings = settings;
         _display = display;
@@ -52,6 +62,9 @@ public class AutoSaverService : IDisposable
         _clock = clock ?? new SystemClock();
         _apply = apply ?? display.TryApply;
         _ui = ui;
+        _pause = pause;
+        _device = device ?? (() => _settings().MonitorDevice);
+        if (_pause != null) { _wasPaused = _pause.IsPaused; _pause.Changed += OnPauseChanged; }
         if (ui == null) return;
         _timer = new System.Windows.Forms.Timer { Interval = 250 };
         _timer.Tick += (_, _) => Tick();
@@ -60,7 +73,7 @@ public class AutoSaverService : IDisposable
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
-    public bool Suspended => Busy || _locked;
+    public bool Suspended => Busy || _locked || _pause?.IsPaused == true;
 
     /// <summary>Shared cooldown for new automatic choices; restoration and manual actions stay responsive.</summary>
     public double AutomaticSwitchWaitSeconds => Math.Max(0,
@@ -71,13 +84,19 @@ public class AutoSaverService : IDisposable
     /// <summary>One state-machine step; the UI timer calls this every 250 ms.</summary>
     public void Tick()
     {
+        _pause?.Tick();
+        if (State == SaverState.Saver && _ownedDevice != _device()) ReleaseSuperseded();
+        if (_pause?.IsPaused == true)
+        { ResetWindows(); Reason = AutomationReason.Paused; Status = _pause.Description; Progress = 0; return; }
         var s = _settings();
-        if (!s.AutoEnabled) { _mediaSince = null; Status = "Auto power-saver is off"; Progress = 0; return; }
-        if (Busy) { _mediaSince = null; Status = "Waiting for confirmation…"; Progress = 0; return; }
-        if (_locked) { _mediaSince = null; Status = "Paused while the screen is locked"; Progress = 0; return; }
+        if (!s.AutoEnabled) { _mediaSince = null; Reason = AutomationReason.Disabled; Status = "Auto power-saver is off"; Progress = 0; return; }
+        if (Busy) { _mediaSince = null; Reason = AutomationReason.Busy; Status = "Waiting for confirmation…"; Progress = 0; return; }
+        if (_locked) { _mediaSince = null; Reason = AutomationReason.Locked; Status = "Paused while the screen is locked"; Progress = 0; return; }
 
         uint idle = _activity.IdleMilliseconds();
         var now = _clock.UtcNow;
+        if (_qualifiedAfter.HasValue)
+            idle = Math.Min(idle, (uint)Math.Clamp((now - _qualifiedAfter.Value).TotalMilliseconds, 0, uint.MaxValue));
 
         if (State == SaverState.Active)
         {
@@ -95,6 +114,7 @@ public class AutoSaverService : IDisposable
             Status = _mediaSince.HasValue
                 ? $"Watching video: {Fmt(now - _mediaSince.Value)} of {s.IdleMinutes} min"
                 : $"No input for {Fmt(TimeSpan.FromMilliseconds(idle))} of {s.IdleMinutes} min";
+            Reason = _mediaSince.HasValue ? AutomationReason.Watching : AutomationReason.Idle;
 
             Progress = _mediaSince.HasValue
                 ? Math.Min(1, (now - _mediaSince.Value).TotalMinutes / s.IdleMinutes)
@@ -102,10 +122,10 @@ public class AutoSaverService : IDisposable
 
             if (idleLong || watching)
             {
-                if (_media.IsGameForeground()) Status = "Paused: a game is in the foreground";
+                if (_media.IsGameForeground()) { Reason = AutomationReason.Game; Status = "Paused: a game is in the foreground"; }
                 else if (AutomaticSwitchWaitSeconds <= 0)
                     EnterSaver(idleLong ? "idle" : "watching");
-                else Status = $"Waiting {Math.Ceiling(AutomaticSwitchWaitSeconds):0} s before another automatic switch";
+                else { Reason = AutomationReason.Cooldown; Status = $"Waiting {Math.Ceiling(AutomaticSwitchWaitSeconds):0} s before another automatic switch"; }
             }
             return;
         }
@@ -114,10 +134,10 @@ public class AutoSaverService : IDisposable
         if ((now - _lastExternalCheck).TotalSeconds >= 2)
         {
             _lastExternalCheck = now;
-            if (_display.GetCurrentHz() != s.SaverHz)
+            if (_display.GetCurrentHz() != _appliedHz)
             {
                 Log.Write("Rate changed externally while in saver; leaving saver state");
-                SetActive();
+                ReleaseSuperseded();
                 OnManualChange();
                 return;
             }
@@ -129,6 +149,7 @@ public class AutoSaverService : IDisposable
             _activityWindowStart ??= now;
             double secs = (now - _activityWindowStart.Value).TotalSeconds;
             Progress = Math.Min(1, secs / s.RestoreSeconds);
+            Reason = AutomationReason.Restoring;
             Status = $"Saver on: activity {secs:0.0} of {s.RestoreSeconds} s, then {RestoreHz} Hz returns";
             if (secs >= s.RestoreSeconds)
                 ExitSaver("activity");
@@ -137,6 +158,7 @@ public class AutoSaverService : IDisposable
         {
             _activityWindowStart = null;
             Progress = 0;
+            Reason = AutomationReason.Saver;
             Status = $"Saver on ({s.SaverHz} Hz): keep moving the mouse for {s.RestoreSeconds} s to restore {RestoreHz} Hz";
         }
     }
@@ -153,7 +175,10 @@ public class AutoSaverService : IDisposable
         if (!_apply(s.SaverHz)) { _lastRestore = _clock.UtcNow; return; }
 
         RestoreHz = current;
+        _ownedDevice = _device();
+        _appliedHz = s.SaverHz;
         State = SaverState.Saver;
+        Reason = AutomationReason.Saver;
         _activityWindowStart = null;
         _lastExternalCheck = _clock.UtcNow;
         OnAutomaticChange();
@@ -166,6 +191,7 @@ public class AutoSaverService : IDisposable
     public void ExitSaver(string reason)
     {
         if (State != SaverState.Saver) return;
+        if (!OwnsCurrentRate()) { ReleaseSuperseded(); return; }
         if (_apply(RestoreHz))
         {
             Log.Write($"Restored {RestoreHz} Hz ({reason})");
@@ -176,9 +202,50 @@ public class AutoSaverService : IDisposable
         }
         else
         {
+            Reason = AutomationReason.RestoreFailed;
             Log.Write($"Restore to {RestoreHz} Hz failed; will retry on next activity window");
             _activityWindowStart = null;
         }
+    }
+
+    private bool OwnsCurrentRate() => _ownedDevice == _device() && _display.GetCurrentHz() == _appliedHz;
+
+    public AutomationReleaseResult ReleaseForPause()
+    {
+        ResetWindows();
+        if (State != SaverState.Saver) return AutomationReleaseResult.NoOwnership;
+        if (!OwnsCurrentRate()) { ReleaseSuperseded(); return AutomationReleaseResult.Superseded; }
+        ExitSaver("automation paused");
+        return State == SaverState.Active ? AutomationReleaseResult.Released : AutomationReleaseResult.Failed;
+    }
+
+    private void ResetWindows() { _mediaSince = null; _activityWindowStart = null; }
+
+    private void ReleaseSuperseded()
+    {
+        OwnershipSuperseded?.Invoke();
+        SetActive();
+    }
+
+    public void ResetQualification()
+    {
+        ResetWindows();
+        _qualifiedAfter = _clock.UtcNow;
+        Progress = 0;
+    }
+
+    private void OnPauseChanged()
+    {
+        if (_wasPaused && !_pause.IsPaused) ResetQualification();
+        _wasPaused = _pause.IsPaused;
+        if (_wasPaused)
+        {
+            ResetWindows();
+            Reason = AutomationReason.Paused;
+            Status = _pause.Description;
+            Progress = 0;
+        }
+        else { Reason = AutomationReason.Starting; Status = "Checking automation…"; }
     }
 
     /// <summary>A manual rate choice cancels the saver state; the chosen rate becomes the active one.</summary>
@@ -193,6 +260,8 @@ public class AutoSaverService : IDisposable
     {
         bool wasSaver = State == SaverState.Saver;
         State = SaverState.Active;
+        _ownedDevice = null;
+        Reason = _pause?.IsPaused == true ? AutomationReason.Paused : AutomationReason.Idle;
         _activityWindowStart = null;
         _mediaSince = null;
         if (wasSaver) SaverEnded?.Invoke();
@@ -203,7 +272,11 @@ public class AutoSaverService : IDisposable
     public void SetLocked(bool locked)
     {
         _locked = locked;
-        if (!locked) ExitSaver("unlock");
+        if (!locked)
+        {
+            _pause?.Tick();
+            if (_pause?.IsPaused != true) ExitSaver("unlock");
+        }
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -218,11 +291,12 @@ public class AutoSaverService : IDisposable
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
         if (e.Mode != PowerModes.Resume) return;
-        _ui.BeginInvoke(() => ExitSaver("resume"));
+        _ui.BeginInvoke(() => { _pause?.Tick(); if (_pause?.IsPaused != true) ExitSaver("resume"); });
     }
 
     public void Dispose()
     {
+        if (_pause != null) _pause.Changed -= OnPauseChanged;
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _timer?.Dispose();

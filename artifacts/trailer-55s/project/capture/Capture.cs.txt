@@ -1,0 +1,172 @@
+using System.Reflection;
+using System.Drawing.Imaging;
+using System.Text.Json;
+using System.Runtime.InteropServices;
+using HzSwitcher.Services;
+using HzSwitcher.UI;
+using HzSwitcher.UI.Controls;
+
+namespace HzSwitcher;
+
+internal sealed class DemoDisplay
+{
+    public int Rate = 240;
+    public string Device = "DEMO-DISPLAY";
+    public int GetCurrentHz() => Rate;
+    public List<int> GetSupportedHz() => [60, 120, 144, 165, 240];
+    public List<MonitorInfo> GetMonitors() => [new(Device, "Display 1 — Demo monitor", true)];
+    public string CurrentModeText() => "2560x1440 @ " + Rate + " Hz";
+}
+internal sealed class DemoBrightness
+{
+    public event Action Changed;
+    public int Level = 70;
+    public bool IsSupported => true;
+    public BrightnessMode Mode => BrightnessMode.Hardware;
+    public string Key => "Demo monitor";
+    public int Get() => Level;
+    public void Change(int value) { Level = value; Changed?.Invoke(); }
+}
+internal sealed class DemoAuto { public SaverState State = SaverState.Active; public int RestoreHz = 240; public string Status = "Watching for idle activity"; public double Progress; }
+internal sealed class DemoProfile { public string ActiveProcess; }
+internal sealed class TrayApp
+{
+    public Settings Settings = new() { AutoEnabled = true, ProfilesEnabled = true, IdleMinutes = 5, RestoreSeconds = 5, AlwaysOnTopEnabled = true,
+        Profiles = [new() { Process = "notepad", Hz = 120 }, new() { Process = "game", Hz = 0 }] };
+    public DemoDisplay Display = new(); public DemoBrightness Brightness = new(); public DemoAuto Auto = new(); public DemoProfile Profiles = new();
+    public AutomationPauseService Pause = new();
+    public MainForm Main;
+    public string AlwaysOnTopStatus => "Ready — 1 pinned\nShortcut: Ctrl+Alt+T";
+    public bool HasPinnedWindows => true;
+    public List<int> VisibleRates() => Display.GetSupportedHz();
+    public int ResolvePreset(Preset p) => ModeMath.Resolve(Display.GetSupportedHz(), p.Hz);
+    public void ApplyPreset(Preset p) => SetHz(ResolvePreset(p));
+    public void SetHz(int hz) { Display.Rate = hz; Main?.RefreshAll(); }
+    public void SetBrightness(int n) => Brightness.Change(n);
+    public void SelectMonitor(string s) { Display.Device = s; Main?.RefreshAll(); }
+    public bool IsStartupEnabled() => false;
+    public void SaveSettings() { }
+    public void SetStartup(bool enabled) { }
+    public void SetAlwaysOnTop(bool enabled) { Settings.AlwaysOnTopEnabled = enabled; }
+    public void UpdatePinPreferences() { }
+    public void ExitSaverNow() { }
+    public void CommitBrightness() { }
+    public void EditPresets() { }
+    public void EditProfiles() { }
+    public void EditHotkeys(Form owner = null) { }
+    public void UnpinAll() { }
+    public void ShowAdvancedSettings() { }
+    public void OpenLog() { }
+    public void OpenSettingsFile() { }
+    public void ShowDiagnostics() { }
+    public void ExitApp() { }
+    public void Hint(string a, string b) { }
+    public void ResumeAutomation() => Pause.Resume();
+    public void RetryAutomationRestore() { }
+    public void AddPauseChoices(ToolStripItemCollection items) { }
+}
+
+internal static class Capture
+{
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr handle, int index);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr handle, int index, int value);
+    static string Output;
+    static readonly Dictionary<string, object> Layout = new();
+    static IEnumerable<Control> All(Control root) => new[] { root }.Concat(root.Controls.Cast<Control>().SelectMany(All));
+    static void Settle(Control root)
+    {
+        for (int pass = 0; pass < 4; pass++)
+        {
+            foreach (var stack in All(root).OfType<LayoutStack>())
+            {
+                int width = Math.Max(1, stack.ClientSize.Width - stack.Padding.Horizontal);
+                foreach (Control child in stack.Controls)
+                    child.MinimumSize = new Size(Math.Max(1, width - child.Margin.Horizontal), child.MinimumSize.Height);
+            }
+            foreach (Control control in All(root).Reverse()) control.PerformLayout();
+        }
+    }
+    static T Field<T>(object o, string n) => (T)o.GetType().GetField(n, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(o);
+    static void Prepare(Form form)
+    {
+        form.ShowInTaskbar = false;
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = new(-30000, -30000);
+        form.Opacity = 0;
+        form.AutoScaleMode = AutoScaleMode.None;
+        _ = form.Handle;
+        SetWindowLong(form.Handle, -20, GetWindowLong(form.Handle, -20) | 0x08000000 | 0x80);
+        form.Show(); // Zero-opacity, non-activating capture surface; never visible on the desktop.
+        form.AutoScaleMode = AutoScaleMode.None;
+        var fonts = All(form).Select(c => (Control: c, Font: c.Font)).ToArray();
+        form.Scale(new SizeF(2, 2));
+        foreach (var item in fonts) item.Control.Font = new Font(item.Font.FontFamily, item.Font.Size * 2, item.Font.Style);
+        form.CreateControl();
+        Settle(form);
+    }
+    static void Save(Form form, string name, params string[] fields)
+    {
+        Settle(form);
+        using var full = new Bitmap(form.Width, form.Height);
+        form.DrawToBitmap(full, new Rectangle(Point.Empty, form.Size));
+        var clientOrigin = form.PointToScreen(Point.Empty);
+        var outerOrigin = form.Bounds.Location;
+        using var bitmap = full.Clone(new Rectangle(clientOrigin.X - outerOrigin.X, clientOrigin.Y - outerOrigin.Y, form.ClientSize.Width, form.ClientSize.Height), PixelFormat.Format32bppArgb);
+        bitmap.Save(Path.Combine(Output, name + ".png"), ImageFormat.Png);
+        var boxes = new Dictionary<string, object>();
+        foreach (string field in fields)
+        {
+            var control = Field<Control>(form, field);
+            Point point = control.PointToScreen(Point.Empty);
+            boxes[field] = new { x = point.X - clientOrigin.X, y = point.Y - clientOrigin.Y, w = control.Width, h = control.Height };
+        }
+        Layout[name] = new { width = bitmap.Width, height = bitmap.Height, elements = boxes };
+    }
+    static void Page(MainForm main, int index)
+    {
+        Field<NavRail>(main, "_rail").SelectedIndex = index;
+        main.RefreshAll(); main.PerformLayout();
+    }
+    [STAThread] static void Main(string[] args)
+    {
+        Output = args[0]; Directory.CreateDirectory(Output);
+        Log.Dir = Path.Combine(Output, "isolated-demo-settings");
+        Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
+        Application.EnableVisualStyles();
+        typeof(Theme).GetField("_accent", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, Color.FromArgb(0x4F, 0x8C, 0xFF));
+        var app = new TrayApp();
+        using var main = new MainForm(app); app.Main = main;
+        Prepare(main);
+        Page(main, 0);
+        Save(main, "display240", "_rates", "_presets", "_bri", "_briValue", "_big", "_monitor", "_displayStatus");
+        app.SetHz(120); Save(main, "display120");
+        app.SetHz(60); Save(main, "display60");
+        app.SetHz(240);
+        for (int n = 70; n >= 40; n -= 2)
+        { app.Brightness.Change(n); main.RefreshAll(); Save(main, "brightness" + n); }
+        app.Brightness.Change(70);
+        Page(main, 1); Save(main, "automation", "_idle", "_saverHz", "_auto", "_pauseAction", "_manageProfiles");
+        app.Pause.Pause(null); main.RefreshAll(); Save(main, "paused", "_pauseAction", "_pauseStatus"); app.Pause.Resume();
+        using (var profiles = new ProfilesForm(app.Settings, app.Display.GetSupportedHz()))
+        { Prepare(profiles); Save(profiles, "profiles"); }
+        Page(main, 0); app.Profiles.ActiveProcess = "notepad"; app.SetHz(120); Save(main, "profileactive", "_displayStatus"); app.Profiles.ActiveProcess = null;
+        app.Auto.State = SaverState.Saver; app.Auto.Status = "Power saver active"; app.Display.Rate = 60; main.RefreshAll(); Save(main, "saver", "_displayStatus");
+        app.Auto.State = SaverState.Active; app.Auto.Status = "Watching for idle activity"; app.Display.Rate = 240; main.RefreshAll(); Save(main, "restored");
+        Page(main, 2); Save(main, "shortcuts", "_hotkeys");
+        Page(main, 3); Save(main, "general", "_alwaysOnTop", "_alwaysOnTopStatus");
+        var snapshot = new DiagnosticsSnapshot(new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero), "1.7.3 — preview", "Windows 11", "X64",
+            "Display 1 — Demo monitor", null, "2560x1440", 240, new[] { 60,120,144,165,240 }, 240,240,
+            new(BrightnessBackend.Ddc,70,70,70,new DateTimeOffset(2026,10,29,12,0,0,TimeSpan.Zero),false,false),
+            true,true,AutomationPauseMode.Running,null,false,SaverState.Active,AutomationReason.Idle,AutomationReason.Idle,0,null);
+        using (var diagnostics = new DiagnosticsForm(() => snapshot, () => Task.CompletedTask)) { Prepare(diagnostics); Save(diagnostics, "diagnostics"); }
+        using (var notes = new Form { Text = "Project notes", ClientSize = new(480,320), Font = Theme.Font() })
+        {
+            notes.Controls.Add(new Label { Text = "Project notes\n\nKeep the reference in view.\n\n01   Check the details\n02   Make your next move\n03   Stay in your flow", Font = Theme.Font(18), ForeColor = Theme.Text, BackColor = Theme.Bg, Dock = DockStyle.Fill, Padding = new Padding(28) });
+            Theme.Apply(notes); Prepare(notes); Save(notes,"notes");
+        }
+        File.WriteAllText(Path.Combine(Output, "layout.json"), JsonSerializer.Serialize(Layout, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(Output, "brand.json"), JsonSerializer.Serialize(new { font = Theme.FontFamilyName, accent = "#4F8CFF", captureScale = 2, productionUi = true, simulatedDeviceState = true, visibleDesktopWindows = false }));
+        main.AllowClose = true;
+        Console.WriteLine("Production UI rendered using transparent non-activating capture surfaces; no visible desktop windows or hardware writes.");
+    }
+}

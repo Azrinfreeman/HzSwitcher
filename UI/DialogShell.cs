@@ -2,60 +2,94 @@ using HzSwitcher.UI.Controls;
 
 namespace HzSwitcher.UI;
 
-/// <summary>
-/// Shared look for the editing dialogs: dark window, short intro text, a body area and a Save / Cancel bar.
-/// A derived dialog adds its controls to <see cref="Body"/>, then calls <see cref="Finish"/> as the last step of its constructor.
-/// </summary>
+/// <summary>Owned editor with a scrolling body and a reachable Save/Cancel footer.</summary>
 internal abstract class DialogShell : Form
 {
-    protected readonly Panel Body = new() { Dock = DockStyle.Fill, Padding = new Padding(20, 4, 20, 8) };
-    /// <summary>Extra buttons on the left of the bar (for example "Add").</summary>
-    protected readonly FlowLayoutPanel LeftActions = new() { Dock = DockStyle.Left, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(16, 12, 0, 0) };
-    protected readonly PillButton SaveButton = new() { Text = "Save", Style = PillStyle.Primary, AutoSize = false, Size = new Size(96, 36), Margin = new Padding(0, 0, 8, 0) };
-    protected readonly PillButton CancelButtonControl = new() { Text = "Cancel", AutoSize = false, Size = new Size(96, 36), DialogResult = DialogResult.Cancel, Margin = new Padding(0) };
+    protected readonly Panel Body = new() { Dock = DockStyle.Fill, Padding = new Padding(24, 16, 24, 16), AutoScroll = true };
+    protected readonly FlowLayoutPanel LeftActions = new() { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+    protected readonly PillButton SaveButton = new() { Text = "Save", Style = PillStyle.Primary, Margin = new Padding(8, 0, 0, 0) };
+    protected readonly PillButton CancelButtonControl = new() { Text = "Cancel", DialogResult = DialogResult.Cancel, Margin = Padding.Empty };
+    private readonly Label _error = MainForm.TextLabel("");
+    private readonly ErrorProvider _errors;
 
-    protected DialogShell(string title, Size clientSize96, string intro)
+    protected DialogShell(string title, Size clientSize96, string intro = null, bool readOnly = false)
     {
         Text = title;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 9.5f);
+        Font = Theme.Font();
         ClientSize = clientSize96;
-
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 12, 16, 0) };
-        buttons.Controls.Add(CancelButtonControl);
+        _errors = new ErrorProvider { ContainerControl = this, BlinkStyle = ErrorBlinkStyle.NeverBlink };
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = Padding.Empty };
         buttons.Controls.Add(SaveButton);
-        var bar = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = Theme.Surface };
-        bar.Controls.Add(buttons);
+        buttons.Controls.Add(CancelButtonControl);
+        var bar = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Padding = new Padding(24, 12, 24, 12), Tag = "surface" };
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.Controls.Add(LeftActions);
-        bar.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border });   // top border
-
-        var head = new Label
+        bar.Controls.Add(buttons);
+        _error.Tag = "error";
+        _error.Dock = DockStyle.Bottom;
+        _error.Padding = new Padding(24, 8, 24, 8);
+        _error.Visible = false;
+        _error.AccessibleRole = AccessibleRole.Alert;
+        var head = new Label { Text = intro ?? "", AutoSize = true, Dock = DockStyle.Top,
+            ForeColor = Theme.TextMuted, Tag = "muted", Padding = new Padding(24, 20, 24, 0),
+            MaximumSize = new Size(clientSize96.Width, 0), Visible = !string.IsNullOrEmpty(intro) };
+        ClientSizeChanged += (_, _) =>
         {
-            Text = intro, AutoSize = true, Dock = DockStyle.Top, ForeColor = Theme.TextMuted,
-            MaximumSize = new Size(clientSize96.Width, 0), Padding = new Padding(20, 16, 20, 8),
+            head.MaximumSize = new Size(Math.Max(1, ClientSize.Width), 0);
+            _error.MaximumSize = new Size(Math.Max(1, ClientSize.Width), 0);
         };
-
-        SaveButton.Click += (_, _) => { if (OnSave()) DialogResult = DialogResult.OK; };
-        AcceptButton = SaveButton;
+        SaveButton.Click += (_, _) =>
+        {
+            ClearError();
+            if (OnSave()) DialogResult = DialogResult.OK;
+        };
+        SaveButton.Visible = !readOnly;
+        if (readOnly) CancelButtonControl.Text = "Close";
+        AcceptButton = readOnly ? CancelButtonControl : SaveButton;
         CancelButton = CancelButtonControl;
-
-        Controls.Add(Body);   // fill first, edge-docked controls after
+        Controls.Add(Body);
         Controls.Add(head);
+        Controls.Add(_error);
         Controls.Add(bar);
+        Body.TabIndex = 0;
+        bar.TabIndex = 1;
+        Shown += (_, _) => Theme.FitWorkingArea(this);
+        DpiChanged += (_, _) => BeginInvoke(() => Theme.FitWorkingArea(this));
     }
 
-    /// <summary>Validate and store the edits. Return false to keep the dialog open.</summary>
+    protected bool ShowError(Control input, string message)
+    {
+        _errors.SetError(input, message);
+        _error.Text = message;
+        _error.Visible = true;
+        input.Focus();
+        _error.AccessibilityObject.RaiseLiveRegionChanged();
+        return false;
+    }
+
+    protected void ClearError()
+    {
+        _errors.Clear();
+        _error.Visible = false;
+    }
+
     protected abstract bool OnSave();
 
-    /// <summary>Call last in the derived constructor: scales for the display and applies the theme to everything added.</summary>
     protected void Finish()
     {
-        AutoScaleDimensions = new SizeF(96f, 96f);
+        AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Theme.Apply(this);
         Theme.RoundCorners(this);
-        BackColor = Theme.Bg;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _errors.Dispose();
+        base.Dispose(disposing);
     }
 }

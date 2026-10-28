@@ -1,0 +1,131 @@
+{
+  "bpm": 120,
+  "beatZero": 0,
+  "sampleRate": 48000,
+  "duration": 55,
+  "score": "Original composition, deterministic synthesis, seed 20261029",
+  "cues": [
+    {
+      "id": "reveal",
+      "from": 11,
+      "duration": 39,
+      "src": "audio/cues/reveal.wav",
+      "volume": 1,
+      "targetFrame": 24,
+      "sourcePeakSamples": 20860,
+      "predictedPeakFrame": 24.0375
+    },
+    {
+      "id": "rateclick",
+      "from": 255,
+      "duration": 12,
+      "src": "audio/cues/rateclick.wav",
+      "volume": 1,
+      "targetFrame": 255,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 255.44125
+    },
+    {
+      "id": "keytap",
+      "from": 390,
+      "duration": 12,
+      "src": "audio/cues/keytap.wav",
+      "volume": 1,
+      "targetFrame": 390,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 390.44125
+    },
+    {
+      "id": "profileslide",
+      "from": 516,
+      "duration": 24,
+      "src": "audio/cues/profileslide.wav",
+      "volume": 1,
+      "targetFrame": 525,
+      "sourcePeakSamples": 14224,
+      "predictedPeakFrame": 524.89
+    },
+    {
+      "id": "sliderstart",
+      "from": 645,
+      "duration": 12,
+      "src": "audio/cues/sliderstart.wav",
+      "volume": 1,
+      "targetFrame": 645,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 645.44125
+    },
+    {
+      "id": "saverdrop",
+      "from": 822,
+      "duration": 34,
+      "src": "audio/cues/saverdrop.wav",
+      "volume": 1,
+      "targetFrame": 825,
+      "sourcePeakSamples": 4166,
+      "predictedPeakFrame": 824.60375
+    },
+    {
+      "id": "saverrestore",
+      "from": 876,
+      "duration": 24,
+      "src": "audio/cues/saverrestore.wav",
+      "volume": 1,
+      "targetFrame": 885,
+      "sourcePeakSamples": 14224,
+      "predictedPeakFrame": 884.89
+    },
+    {
+      "id": "pausestop",
+      "from": 960,
+      "duration": 12,
+      "src": "audio/cues/pausestop.wav",
+      "volume": 1,
+      "targetFrame": 960,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 960.44125
+    },
+    {
+      "id": "pin",
+      "from": 1110,
+      "duration": 12,
+      "src": "audio/cues/pin.wav",
+      "volume": 1,
+      "targetFrame": 1110,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 1110.44125
+    },
+    {
+      "id": "diagnostics",
+      "from": 1230,
+      "duration": 12,
+      "src": "audio/cues/diagnostics.wav",
+      "volume": 1,
+      "targetFrame": 1230,
+      "sourcePeakSamples": 706,
+      "predictedPeakFrame": 1230.44125
+    },
+    {
+      "id": "ensemble",
+      "from": 1352,
+      "duration": 39,
+      "src": "audio/cues/ensemble.wav",
+      "volume": 1,
+      "targetFrame": 1365,
+      "sourcePeakSamples": 20860,
+      "predictedPeakFrame": 1365.0375
+    },
+    {
+      "id": "lockup",
+      "from": 1504,
+      "duration": 34,
+      "src": "audio/cues/lockup.wav",
+      "volume": 1,
+      "targetFrame": 1507,
+      "sourcePeakSamples": 4166,
+      "predictedPeakFrame": 1506.60375
+    }
+  ],
+  "scorePeak": 0.5387985469461903,
+  "mixPeak": 0.5440183840293087
+}

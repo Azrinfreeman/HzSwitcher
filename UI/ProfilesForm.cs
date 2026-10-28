@@ -10,22 +10,22 @@ internal sealed class ProfilesForm : DialogShell
     private readonly Settings _s;
     private readonly List<int> _supported;
     private readonly List<string> _running;
-    private readonly FlowLayoutPanel _list = new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(0, 4, 0, 0) };
+    private readonly LayoutStack _list = new() { Dock = DockStyle.Fill, AutoSize = false, AutoScroll = true };
     private readonly List<Row> _rows = new();
-    private readonly Label _empty = new() { Text = "No apps yet. Use Add app to choose one.", AutoSize = true, ForeColor = Theme.TextMuted, Margin = new Padding(0, 8, 0, 0) };
+    private readonly Label _empty = new() { Text = "No app profiles. Choose Add app to create one.", Tag = "muted", AutoSize = true, ForeColor = Theme.TextMuted, Margin = new Padding(0, 8, 0, 0) };
     private readonly Toggle _enabled = new() { Text = "Enable app profiles" };
-    private readonly NumberBox _leave = new() { Minimum = 1, Maximum = 120, Width = 104 };
+    private readonly NumberBox _leave = new() { Minimum = 1, Maximum = 120 };
 
     private sealed class Row
     {
-        public FlowLayoutPanel Panel;
+        public TableLayoutPanel Panel;
         public Toggle On;
         public ComboBox Process, Rate;
     }
 
     public ProfilesForm(Settings s, List<int> supported)
         : base("App profiles", new Size(680, 420),
-               "Pick a running app or type its process name (no .exe, * allowed). Changing the rate yourself while the app is in front overrides the profile.")
+               "Choose an app or enter its process name. No .exe is needed; * matches any text. A manual rate change overrides the active profile.")
     {
         _s = s;
         _supported = supported;
@@ -33,11 +33,11 @@ internal sealed class ProfilesForm : DialogShell
 
         _enabled.Checked = s.ProfilesEnabled;
         _leave.Value = Math.Clamp(s.ProfileLeaveSeconds, 1, 120);
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 8) };
+        _enabled.AccessibleName = "Enable app profiles";
+        _leave.AccessibleName = "Profile restore delay in seconds";
+        var top = new LayoutStack { Dock = DockStyle.Top, Padding = new Padding(0, 0, 0, 16) };
         top.Controls.Add(_enabled);
-        top.SetFlowBreak(_enabled, true);
-        top.Controls.Add(new Label { Text = "Switch back after the app is out of focus (seconds):", AutoSize = true, Margin = new Padding(0, 8, 8, 0) });
-        top.Controls.Add(_leave);
+        top.Controls.Add(MainForm.Setting("Restore delay (seconds)", _leave, "After the app leaves the foreground."));
 
         var add = new PillButton { Text = "Add app" };
         add.Click += (_, _) => AddRow(new AppProfile { Process = "", Hz = 0 });
@@ -69,15 +69,30 @@ internal sealed class ProfilesForm : DialogShell
     private void AddRow(AppProfile p)
     {
         _list.Controls.Remove(_empty);
-        var row = new Row { Panel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 0, 0, 6) } };
-        row.On = new Toggle { Checked = p.Enabled, Margin = new Padding(0, 3, 10, 0) };
-        row.Process = new ComboBox { Width = Theme.Dp(this, 250), DropDownStyle = ComboBoxStyle.DropDown, Margin = new Padding(0, 3, 8, 0) };
+        var row = new Row { Panel = new TableLayoutPanel { AutoSize = true, ColumnCount = 4, Margin = new Padding(0, 0, 0, 8) } };
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
+        row.Panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.On = new Toggle { Text = "", Checked = p.Enabled, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 12, 0) };
+        row.Process = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown, AccessibleName = "Application process", Margin = new Padding(0, 4, 8, 0) };
         row.Process.Items.AddRange(_running.Cast<object>().ToArray());
         row.Process.Text = p.Process;
-        row.Rate = new ComboBox { Width = Theme.Dp(this, 140), Margin = new Padding(0, 3, 8, 0) };
+        row.Rate = new ComboBox { Dock = DockStyle.Fill, AccessibleName = "Profile refresh rate", Margin = new Padding(0, 4, 8, 0) };
         RateChoice.Fill(row.Rate, _supported, p.Hz);
         var remove = new PillButton { Text = "Remove", Margin = new Padding(0) };
-        remove.Click += (_, _) => { _rows.Remove(row); _list.Controls.Remove(row.Panel); row.Panel.Dispose(); };
+        remove.AccessibleName = "Remove profile for " + p.Process;
+        row.On.AccessibleName = "Enable profile for " + p.Process;
+        row.Process.TextChanged += (_, _) =>
+        {
+            row.On.AccessibleName = "Enable profile for " + row.Process.Text;
+            remove.AccessibleName = "Remove profile for " + row.Process.Text;
+        };
+        remove.Click += (_, _) =>
+        {
+            _rows.Remove(row); _list.Controls.Remove(row.Panel); row.Panel.Dispose();
+            if (_rows.Count == 0) _list.Controls.Add(_empty);
+        };
         row.Panel.Controls.AddRange(new Control[] { row.On, row.Process, row.Rate, remove });
         _rows.Add(row);
         _list.Controls.Add(row.Panel);

@@ -3,67 +3,51 @@ using HzSwitcher.UI.Controls;
 
 namespace HzSwitcher.UI;
 
-/// <summary>Main window: a navigation rail and four pages (Display, Automation, Shortcuts, General).</summary>
+/// <summary>The display control panel and its configuration pages.</summary>
 internal sealed class MainForm : Form
 {
-    // Design units at 96 dpi; the form scales them for the display.
-    private const int WindowWidth = 780;
-    private const int WindowHeight = 560;
-    private const int RailWidth = 180;
-    private const int CardWidth = 560;
-    private const int BodyWidth = 530;
-
     private readonly TrayApp _app;
     private readonly ToolTip _tips = new() { InitialDelay = 400, ReshowDelay = 200 };
-
     private readonly NavRail _rail = new();
     private readonly Panel _content = new() { Dock = DockStyle.Fill };
-    private readonly List<FlowLayoutPanel> _pages = new();
-
-    // Display page
-    private readonly Label _big = new() { AutoSize = true, Font = new Font("Segoe UI", 34f, FontStyle.Bold) };
-    private readonly Label _mode = new() { AutoSize = true, ForeColor = Theme.TextMuted, Font = new Font("Segoe UI", 10f) };
-    private readonly ComboBox _monitor = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250, DropDownWidth = 440, DisplayMember = "Label" };
-    private readonly FlowLayoutPanel _chips = new() { AutoSize = true, WrapContents = true, MaximumSize = new Size(260, 0), Margin = new Padding(0, 0, 0, 6) };
-    private readonly FlowLayoutPanel _presets = new() { AutoSize = true, WrapContents = true, MaximumSize = new Size(BodyWidth, 0), MinimumSize = new Size(BodyWidth, 0) };
-    private readonly ChipGroup _rates = new() { MaximumSize = new Size(BodyWidth, 0), MinimumSize = new Size(BodyWidth, 0), AccessibleName = "Refresh rate" };
-    private readonly Toggle _showAll = new() { Text = "Show all rates" };
-    private readonly ThemedSlider _bri = new() { Minimum = 0, Maximum = 100, SmallChange = 5, LargeChange = 10, Width = BodyWidth - 100, Height = 32, AccessibleName = "Brightness" };
-    private readonly Label _briValue = new() { AutoSize = true, Font = new Font("Segoe UI", 14f, FontStyle.Bold) };
-    private readonly Label _briInfo = new() { AutoSize = true, ForeColor = Theme.TextMuted, MaximumSize = new Size(BodyWidth, 0) };
-    private readonly Button _briDown;
-    private readonly Button _briUp;
-
-    // Automation page
-    private readonly Toggle _auto = new() { Text = "Enabled", Font = new Font("Segoe UI", 10f, FontStyle.Bold) };
-    private readonly Label _status = new() { AutoSize = false, Height = 36, Width = BodyWidth, ForeColor = Theme.TextMuted };
-    private readonly SaverBar _bar = new() { Width = BodyWidth };
+    private readonly List<LayoutStack> _pages = new();
+    private readonly Label _big = TextLabel("", size: 22, bold: true);
+    private readonly Label _mode = TextLabel("", muted: true);
+    private readonly ComboBox _monitor = new() { DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = "Label", DropDownWidth = 600 };
+    private readonly Label _monitorName = TextLabel("");
+    private readonly FlowLayoutPanel _presets = new() { AutoSize = true, WrapContents = true, Margin = Padding.Empty };
+    private readonly ChipGroup _rates = new() { AccessibleName = "Refresh rate", AccessibleRole = AccessibleRole.Grouping };
+    private readonly CheckBox _showAll = new() { Text = "Show all rates", AutoSize = true };
+    private readonly Label _displayStatus = TextLabel("", muted: true);
+    private readonly ThemedSlider _bri = new() { Minimum = 0, Maximum = 100, SmallChange = 5, LargeChange = 10, Dock = DockStyle.Fill, Height = 44, AccessibleName = "Brightness" };
+    private readonly Label _briValue = TextLabel("", size: 14);
+    private readonly Label _briInfo = TextLabel("", muted: true);
+    private readonly Button _briDown, _briUp;
+    private readonly Toggle _auto = new() { Text = "", AccessibleName = "Enable auto power-saver" };
+    private readonly Label _status = TextLabel("", muted: true);
+    private readonly SaverBar _bar = new();
     private readonly NumberBox _idle = Num(1, 240);
     private readonly NumberBox _restore = Num(1, 60);
-    private readonly ComboBox _saverHz = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
-    private readonly ComboBox _saverBri = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
-    private readonly Toggle _profilesOn = new() { Text = "Use per-app refresh rates" };
-    private readonly Label _profilesInfo = new() { AutoSize = true, ForeColor = Theme.TextMuted, MaximumSize = new Size(BodyWidth, 0) };
-
-    // Shortcuts page
-    private readonly Label _hotkeys = new() { AutoSize = true, ForeColor = Theme.Text, MaximumSize = new Size(BodyWidth, 0) };
-
-    // General page
-    private readonly Toggle _pinOutline = new() { Text = "Show outline around pinned windows" };
-    private readonly Toggle _pinSound = new() { Text = "Play sound when pinning or unpinning" };
-    private readonly Toggle _pinMouse = new() { Text = "Enable window frame and Shift+right-click menus" };
-    private readonly NumberBox _pinThickness = new() { Minimum = 1, Maximum = 8, Value = 3, AccessibleName = "Outline thickness in logical pixels" };
-    private readonly Toggle _alwaysOnTop = new() { Text = "Enable always on top" };
-    private readonly Label _alwaysOnTopStatus = new() { AutoSize = true, MaximumSize = new Size(BodyWidth, 0), ForeColor = Theme.TextMuted };
-    private Button _unpinAll;
-    private readonly Toggle _notify = new() { Text = "Notify me when it switches automatically" };
-    private readonly Toggle _startup = new() { Text = "Start with Windows (minimized to tray)" };
-    private readonly Toggle _briRestore = new() { Text = "Restore each monitor's brightness at startup" };
-
+    private readonly ComboBox _saverHz = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 132 };
+    private readonly ComboBox _saverBri = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 132 };
+    private TableLayoutPanel _saverFields;
+    private readonly Toggle _profilesOn = new() { Text = "", AccessibleName = "Enable app profiles" };
+    private readonly Label _profilesInfo = TextLabel("", muted: true);
+    private PillButton _manageProfiles;
+    private readonly LayoutStack _hotkeys = new();
+    private string _hotkeySignature, _rateError;
+    private readonly Toggle _alwaysOnTop = new() { Text = "", AccessibleName = "Enable always on top" };
+    private readonly Label _alwaysOnTopStatus = TextLabel("", muted: true);
+    private PillButton _unpinAll;
+    private AlwaysOnTopSettingsForm _pinEditor;
+    private readonly Toggle _notify = new() { Text = "", AccessibleName = "Notify on automatic switches" };
+    private readonly Toggle _startup = new() { Text = "", AccessibleName = "Start with Windows minimized to tray" };
+    private readonly Toggle _briRestore = new() { Text = "", AccessibleName = "Restore each monitor's brightness at startup" };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 500 };
-    private bool _loading;
-    private bool _hintShown;
-    private bool _positionRestored;
+    private readonly Label _pauseStatus = TextLabel("", muted: true);
+    private readonly PillButton _pauseAction = new() { Text = "Pause…" };
+    private readonly PillButton _retryRestore = new() { Text = "Retry restore" };
+    private bool _loading, _hintShown, _positionRestored;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool AllowClose { get; set; }
@@ -71,189 +55,186 @@ internal sealed class MainForm : Form
     public MainForm(TrayApp app)
     {
         _app = app;
-        Text = "HzSwitcher " + Application.ProductVersion.Split('+')[0];
-        Font = new Font("Segoe UI", 9.5f);
+        Text = "HzSwitcher";
+        Font = Theme.Font();
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
-        ClientSize = new Size(WindowWidth, WindowHeight);
+        ClientSize = new Size(780, 560);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
-
-        _briDown = FlatButton("−", (_, _) => StepBrightness(-5), "Darker");
-        _briUp = FlatButton("+", (_, _) => StepBrightness(5), "Brighter");
+        _briDown = ActionButton("−", (_, _) => StepBrightness(-5));
+        _briUp = ActionButton("+", (_, _) => StepBrightness(5));
+        foreach (var button in new[] { _briDown, _briUp })
+        { button.AutoSize = false; button.Size = new Size(44, 44); button.Margin = Padding.Empty; }
 
         BuildDisplayPage();
         BuildAutomationPage();
         BuildShortcutsPage();
         BuildGeneralPage();
-
         foreach (var page in _pages) _content.Controls.Add(page);
-        Controls.Add(_content);   // fill first, edge-docked rail after
-        _rail.Width = RailWidth;
-        _rail.Footer = "Version " + Application.ProductVersion.Split('+')[0];
-        _rail.Add("Display", "");
-        _rail.Add("Automation", "");
-        _rail.Add("Shortcuts", "");
-        _rail.Add("General", "");
+        Controls.Add(_content);
+        _rail.Footer = "v" + Application.ProductVersion.Split('+')[0];
+        _rail.Add("Display", "\uE7F4");
+        _rail.Add("Automation", "\uE945");
+        _rail.Add("Shortcuts", "\uE765");
+        _rail.Add("General", "\uE713");
         _rail.SelectedIndexChanged += (_, _) => ShowPage(_rail.SelectedIndex);
         Controls.Add(_rail);
         ShowPage(0);
-
-        // Keyboard and screen-reader basics: the rail comes first in tab order, unlabeled inputs get names.
         _rail.TabIndex = 0;
         _content.TabIndex = 1;
         _monitor.AccessibleName = "Monitor";
-        _idle.AccessibleName = "Minutes of idle or video before dropping";
-        _restore.AccessibleName = "Seconds of activity before restoring";
+        _idle.AccessibleName = "Idle or video timeout in minutes";
+        _restore.AccessibleName = "Continuous activity before restoring in seconds";
         _saverHz.AccessibleName = "Saver refresh rate";
         _saverBri.AccessibleName = "Saver brightness";
         _briDown.AccessibleName = "Decrease brightness";
         _briUp.AccessibleName = "Increase brightness";
-
         WireEvents();
-
         _timer.Tick += (_, _) => UpdateStatus();
         VisibleChanged += OnVisibleChanged;
-
-        // Set last, as the designer does: everything above is laid out in 96-dpi units and scaled for the display on load.
-        AutoScaleDimensions = new SizeF(96f, 96f);
+        Shown += (_, _) => Theme.FitWorkingArea(this);
+        DpiChanged += (_, _) => BeginInvoke(() => Theme.FitWorkingArea(this));
+        AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-
         Theme.Apply(this);
         Theme.RoundCorners(this);
-        BackColor = Theme.Bg;
-        _briInfo.ForeColor = Theme.TextMuted;
-        _big.ForeColor = Theme.Text;
-        _mode.ForeColor = Theme.TextMuted;
-        _status.ForeColor = Theme.TextMuted;
-        _profilesInfo.ForeColor = Theme.TextMuted;
     }
-
-    // ---------- pages ----------
 
     private void BuildDisplayPage()
     {
-        var page = NewPage();
-
-        // hero: current rate on the left, state chips and monitor picker on the right
-        var left = Stack();
-        _big.Margin = new Padding(0);
-        _mode.Margin = new Padding(4, 0, 0, 0);
-        left.Controls.Add(_big);
-        left.Controls.Add(_mode);
-        var right = Stack();
-        right.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        right.Controls.Add(_chips);
-        right.Controls.Add(_monitor);
-        var grid = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = new Padding(0), MinimumSize = new Size(BodyWidth, 0), MaximumSize = new Size(BodyWidth, 0) };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        left.Anchor = AnchorStyles.Left | AnchorStyles.Top;
-        grid.Controls.Add(left);
-        grid.Controls.Add(right);
-        var hero = new Card { Padding = new Padding(15), MinimumSize = new Size(CardWidth, 0), MaximumSize = new Size(CardWidth, 0), Margin = new Padding(0, 0, 0, 12) };
-        hero.Controls.Add(grid);
-        page.Controls.Add(hero);
-
-        var edit = FlatButton("Edit presets…", (_, _) => _app.EditPresets(), "Rename presets or change their refresh rates");
-        page.Controls.Add(Section("Presets", _presets, null, edit));
-
-        page.Controls.Add(Section("Refresh rate", _rates,
-            $"Switches instantly. A display problem resets it to {_app.Settings.FallbackHz} Hz.", _showAll));
-
-        var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
-        _bri.Margin = new Padding(0, 0, 8, 0);
-        _briDown.Margin = new Padding(0, 0, 8, 0);
-        _briUp.Margin = new Padding(0, 0, 0, 0);
-        row.Controls.Add(_briDown);
-        row.Controls.Add(_bri);
-        row.Controls.Add(_briUp);
-        var briBody = Stack();
-        briBody.Controls.Add(row);
-        briBody.Controls.Add(_briInfo);
-        page.Controls.Add(Section("Brightness", briBody, null, _briValue));
+        var page = NewPage("Display");
+        _monitor.Margin = new Padding(0, 0, 0, 4);
+        _monitorName.Margin = new Padding(0, 0, 0, 4);
+        page.Controls.Add(_monitor);
+        page.Controls.Add(_monitorName);
+        _mode.Margin = new Padding(0, 0, 0, 20);
+        page.Controls.Add(_mode);
+        var surface = new Card { Margin = Padding.Empty };
+        surface.Controls.Add(Heading("Refresh rate", _big));
+        _rates.Margin = new Padding(0, 8, 0, 0);
+        surface.Controls.Add(_rates);
+        var more = Heading("", _showAll);
+        more.Margin = new Padding(0, 0, 0, 16);
+        surface.Controls.Add(more);
+        surface.Controls.Add(Heading("Presets", ActionButton("Edit…", (_, _) => _app.EditPresets(), quiet: true)));
+        _presets.Margin = new Padding(0, 4, 0, 20);
+        surface.Controls.Add(_presets);
+        surface.Controls.Add(Heading("Brightness", _briValue));
+        var brightness = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Margin = new Padding(0, 8, 0, 0) };
+        brightness.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        brightness.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        brightness.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _bri.Margin = new Padding(8, 0, 8, 0);
+        brightness.Controls.Add(_briDown);
+        brightness.Controls.Add(_bri);
+        brightness.Controls.Add(_briUp);
+        surface.Controls.Add(brightness);
+        _briInfo.Margin = new Padding(0, 8, 0, 0);
+        surface.Controls.Add(_briInfo);
+        page.Controls.Add(surface);
+        _displayStatus.AutoSize = false;
+        _displayStatus.Height = 48;
+        _displayStatus.Margin = new Padding(0, 12, 0, 0);
+        page.Controls.Add(_displayStatus);
+        _tips.SetToolTip(_briInfo, "Software dimming only darkens the picture and may conflict with Night light or HDR. Enable DDC/CI in the monitor menu for backlight control.");
     }
 
     private void BuildAutomationPage()
     {
-        var page = NewPage();
-
-        var autoBody = Stack();
-        _status.Margin = new Padding(0, 4, 0, 4);
-        _bar.Margin = new Padding(0, 0, 0, 12);
-        var fields = new TableLayoutPanel
+        var page = NewPage("Automation");
+        var pauseActions = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        pauseActions.Controls.Add(_pauseAction);
+        pauseActions.Controls.Add(_retryRestore);
+        _pauseAction.Click += (_, _) =>
         {
-            AutoSize = true, ColumnCount = 2, Margin = new Padding(0),
-            MinimumSize = new Size(BodyWidth, 0), MaximumSize = new Size(BodyWidth, 0),
+            if (_app.Pause.IsPaused) _app.ResumeAutomation();
+            else
+            {
+                var menu = new ContextMenuStrip { Renderer = new ThemedMenuRenderer(), BackColor = Theme.Surface, ForeColor = Theme.Text, Font = Theme.Font() };
+                _app.AddPauseChoices(menu.Items);
+                menu.Closed += (_, _) => menu.Dispose();
+                menu.Show(_pauseAction, new Point(0, _pauseAction.Height));
+            }
         };
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddRow(fields, "Drop after idle / video (minutes)", _idle);
-        AddRow(fields, "Restore after activity for (seconds)", _restore);
-        AddRow(fields, "Saver refresh rate (Hz)", _saverHz);
-        AddRow(fields, "Saver brightness", _saverBri);
-        autoBody.Controls.Add(_auto);
-        autoBody.Controls.Add(_status);
-        autoBody.Controls.Add(_bar);
-        autoBody.Controls.Add(fields);
-        page.Controls.Add(Section("Auto power-saver", autoBody));
-
-        var profileBody = Stack();
-        profileBody.Controls.Add(_profilesOn);
-        profileBody.Controls.Add(_profilesInfo);
-        var manage = FlatButton("Manage…", (_, _) => _app.EditProfiles(), "Choose a refresh rate for specific apps");
-        page.Controls.Add(Section("App profiles", profileBody, "Example: 240 Hz while a game is in front, 60 Hz while a video player is.", manage));
+        _retryRestore.Click += (_, _) => _app.RetryAutomationRestore();
+        var pauseRow = Setting("Automatic changes", pauseActions);
+        page.Controls.Add(pauseRow);
+        _pauseStatus.Margin = new Padding(0, 0, 0, 16);
+        page.Controls.Add(_pauseStatus);
+        var saver = Section("Auto power-saver", _auto);
+        _status.Margin = new Padding(0, 8, 0, 8);
+        saver.Controls.Add(_status);
+        _bar.Margin = new Padding(0, 0, 0, 8);
+        saver.Controls.Add(_bar);
+        _saverFields = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
+        _saverFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _saverFields.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        AddRow(_saverFields, "Idle or video timeout", WithUnit(_idle, "min"));
+        AddRow(_saverFields, "Restore after activity", WithUnit(_restore, "sec"));
+        AddRow(_saverFields, "Saver refresh rate", _saverHz);
+        AddRow(_saverFields, "Saver brightness", _saverBri);
+        saver.Controls.Add(_saverFields);
+        var detection = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        detection.Controls.Add(ActionButton("Detection settings…", (_, _) => _app.ShowAdvancedSettings(), quiet: true));
+        saver.Controls.Add(detection);
+        page.Controls.Add(saver);
+        var profiles = Section("App profiles", _profilesOn);
+        _profilesInfo.Margin = new Padding(0, 8, 0, 12);
+        profiles.Controls.Add(_profilesInfo);
+        _manageProfiles = ActionButton("Manage profiles…", (_, _) => _app.EditProfiles());
+        var actions = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        actions.Controls.Add(_manageProfiles);
+        profiles.Controls.Add(actions);
+        page.Controls.Add(profiles);
     }
 
     private void BuildShortcutsPage()
     {
-        var page = NewPage();
-        var edit = FlatButton("Edit hotkeys…", (_, _) => _app.EditHotkeys(), "Record new global hotkeys");
-        page.Controls.Add(Section("Hotkeys", _hotkeys, "Hotkeys work everywhere while HzSwitcher is running.", edit));
+        var page = NewPage("Shortcuts");
+        page.Controls.Add(_hotkeys);
+        var actions = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 20, 0, 0) };
+        actions.Controls.Add(ActionButton("Edit shortcuts…", (_, _) => _app.EditHotkeys()));
+        page.Controls.Add(actions);
     }
 
     private void BuildGeneralPage()
     {
-        var page = NewPage();
-
-        var behavior = Stack();
-        foreach (var t in new[] { _notify, _startup, _briRestore }) { t.Margin = new Padding(0, 0, 0, 8); behavior.Controls.Add(t); }
-        page.Controls.Add(Section("Behavior", behavior));
-
-        var pin = Stack();
-        pin.Controls.Add(_alwaysOnTop);
+        var page = NewPage("General");
+        var behavior = Section("Behavior");
+        behavior.Controls.Add(Setting("Notify on automatic switches", _notify));
+        behavior.Controls.Add(Setting("Start with Windows in tray", _startup));
+        behavior.Controls.Add(Setting("Restore brightness at startup", _briRestore));
+        page.Controls.Add(behavior);
+        var pin = Section("Always on top", _alwaysOnTop);
+        _alwaysOnTopStatus.Margin = new Padding(0, 8, 0, 12);
         pin.Controls.Add(_alwaysOnTopStatus);
-        foreach (var toggle in new[] { _pinOutline, _pinSound, _pinMouse })
-        { toggle.Margin = new Padding(0, 6, 0, 6); pin.Controls.Add(toggle); }
-        var thicknessRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-        thicknessRow.Controls.Add(new Label { Text = "Outline thickness (1-8):", AutoSize = true, Margin = new Padding(0, 6, 10, 0) });
-        thicknessRow.Controls.Add(_pinThickness);
-        pin.Controls.Add(thicknessRow);
-        var pinActions = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
-        pinActions.Controls.Add(FlatButton("Edit hotkeys...", (_, _) => _app.EditHotkeys(), "Choose the pin/unpin shortcut"));
-        _unpinAll = FlatButton("Unpin all", (_, _) => _app.UnpinAll(), "Restore windows pinned by HzSwitcher");
+        var pinActions = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        pinActions.Controls.Add(ActionButton("Configure…", (_, _) => ShowAlwaysOnTopSettings()));
+        _unpinAll = ActionButton("Unpin all", (_, _) => _app.UnpinAll());
         pinActions.Controls.Add(_unpinAll);
         pin.Controls.Add(pinActions);
-        page.Controls.Add(Section("Always on top", pin, "Right-click a standard title bar or window frame for Always on top. Use Shift+right-click anywhere for custom title bars. You can also right-click a pinned outline. HzSwitcher must stay running."));
-
-        var tools = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, MaximumSize = new Size(BodyWidth, 0) };
-        tools.Controls.Add(FlatButton("Advanced settings…", (_, _) => _app.ShowAdvancedSettings(), "Video/game detection lists"));
-        tools.Controls.Add(FlatButton("Open log", (_, _) => _app.OpenLog(), null));
-        tools.Controls.Add(FlatButton("Hide to tray", (_, _) => Hide(), "Keep running in the tray"));
-        page.Controls.Add(Section("Tools", tools));
-
-        var exit = FlatButton("Exit app", (_, _) => _app.ExitApp(), "Quit HzSwitcher completely");
-        exit.Style = PillStyle.Danger;
-        page.Controls.Add(Section("Quit", exit, "Closing the window keeps HzSwitcher running in the tray; Exit app stops it completely."));
+        page.Controls.Add(pin);
+        var maintenance = Section("Maintenance");
+        var tools = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        tools.Controls.Add(ActionButton("Diagnostics…", (_, _) => _app.ShowDiagnostics()));
+        tools.Controls.Add(ActionButton("Open log", (_, _) => _app.OpenLog()));
+        tools.Controls.Add(ActionButton("Open settings file", (_, _) => _app.OpenSettingsFile()));
+        maintenance.Controls.Add(tools);
+        page.Controls.Add(maintenance);
+        var footer = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+        footer.Controls.Add(ActionButton("Hide to tray", (_, _) => Hide(), quiet: true));
+        footer.Controls.Add(ActionButton("Exit app", (_, _) => _app.ExitApp(), quiet: true));
+        page.Controls.Add(footer);
     }
 
-    private FlowLayoutPanel NewPage()
+    private LayoutStack NewPage(string title)
     {
-        var page = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            AutoScroll = true, Padding = new Padding(20, 16, 20, 8), Visible = false, BackColor = Theme.Bg,
-        };
+        var page = new LayoutStack { Dock = DockStyle.Fill, AutoSize = false, AutoScroll = true,
+            Padding = new Padding(24, 20, 24, 12), Visible = false };
+        var heading = TextLabel(title, size: 18, bold: true);
+        heading.Margin = new Padding(0, 0, 0, 20);
+        page.Controls.Add(heading);
         _pages.Add(page);
         return page;
     }
@@ -265,7 +246,7 @@ internal sealed class MainForm : Form
 
     private void WireEvents()
     {
-        _tips.SetToolTip(_monitor, "Which monitor HzSwitcher controls");
+        _tips.SetToolTip(_monitor, "Monitor controlled by HzSwitcher");
         _tips.SetToolTip(_showAll, "Include rates below 60 Hz and near-duplicate rates like 59 or 119");
         _tips.SetToolTip(_auto, "Drop to the saver rate when idle or watching video; restore when you're back");
         _tips.SetToolTip(_idle, "Minutes of no input, or of video playing with no input, before dropping");
@@ -282,13 +263,12 @@ internal sealed class MainForm : Form
             if (!_loading && _monitor.SelectedItem is MonitorInfo m && m.Device != _app.Display.Device) _app.SelectMonitor(m.Device);
         };
         _showAll.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.ShowAllRates = _showAll.Checked; _app.SaveSettings(); RefreshAll(); } };
-        _auto.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AutoEnabled = _auto.Checked; _app.SaveSettings(); if (!_auto.Checked) _app.ExitSaverNow(); } };
+        _auto.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AutoEnabled = _auto.Checked; _app.SaveSettings(); if (!_auto.Checked) _app.ExitSaverNow(); RefreshAll(); } };
         _idle.ValueChanged += (_, _) => { if (!_loading) { _app.Settings.IdleMinutes = _idle.Value; _app.SaveSettings(); } };
         _restore.ValueChanged += (_, _) => { if (!_loading) { _app.Settings.RestoreSeconds = _restore.Value; _app.SaveSettings(); } };
         _saverHz.SelectedIndexChanged += (_, _) => { if (!_loading && _saverHz.SelectedItem is int hz) { _app.Settings.SaverHz = hz; _app.SaveSettings(); } };
         _bri.Scroll += (_, _) => { if (!_loading) { _app.SetBrightness(_bri.Value); _briValue.Text = _bri.Value + "%"; } };
-        _bri.MouseUp += (_, _) => _app.CommitBrightness();
-        _bri.KeyUp += (_, _) => _app.CommitBrightness();
+        _bri.InteractionCompleted += (_, _) => _app.CommitBrightness();
         _briRestore.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.RestoreBrightnessOnStart = _briRestore.Checked; _app.SaveSettings(); } };
         _app.Brightness.Changed += RefreshBrightness;
         _saverBri.Items.Add("Unchanged");
@@ -302,43 +282,32 @@ internal sealed class MainForm : Form
         _profilesOn.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.ProfilesEnabled = _profilesOn.Checked; _app.SaveSettings(); } };
         _notify.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.NotifyOnAutoSwitch = _notify.Checked; _app.SaveSettings(); } };
         _alwaysOnTop.CheckedChanged += (_, _) => { if (!_loading) _app.SetAlwaysOnTop(_alwaysOnTop.Checked); };
-        _pinOutline.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutline = _pinOutline.Checked; _app.UpdatePinPreferences(); } };
-        _pinSound.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopSound = _pinSound.Checked; _app.UpdatePinPreferences(); } };
-        _pinMouse.CheckedChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopMouseMenu = _pinMouse.Checked; _app.UpdatePinPreferences(); } };
-        _pinThickness.ValueChanged += (_, _) => { if (!_loading) { _app.Settings.AlwaysOnTopOutlineThickness = _pinThickness.Value; _app.UpdatePinPreferences(); } };
         _startup.CheckedChanged += (_, _) => { if (!_loading) _app.SetStartup(_startup.Checked); };
     }
+
 
     private void OnVisibleChanged(object sender, EventArgs e)
     {
         if (Visible)
         {
-            if (!_positionRestored) { _positionRestored = true; RestoreWindowPosition(); ActiveControl = _rail; }
+            if (!_positionRestored)
+            {
+                _positionRestored = true;
+                var s = _app.Settings;
+                if (s.WindowWidth > 0 && Screen.AllScreens.Any(sc => sc.WorkingArea.Contains(new Point(s.WindowLeft, s.WindowTop))))
+                { StartPosition = FormStartPosition.Manual; Location = new Point(s.WindowLeft, s.WindowTop); }
+                Theme.FitWorkingArea(this);
+                ActiveControl = _rail;
+            }
             RefreshAll();
             _timer.Start();
         }
-        else
-        {
-            _timer.Stop();
-            SaveWindowPosition();
-        }
-    }
-
-    // ---------- remember position (the size is fixed) ----------
-
-    private void RestoreWindowPosition()
-    {
-        var s = _app.Settings;
-        if (s.WindowWidth <= 0) return;
-        var centre = new Point(s.WindowLeft + Width / 2, s.WindowTop + 40);
-        if (!Screen.AllScreens.Any(sc => sc.WorkingArea.Contains(centre))) return;   // monitor is gone: keep default placement
-        StartPosition = FormStartPosition.Manual;
-        Location = new Point(s.WindowLeft, s.WindowTop);
+        else { _timer.Stop(); SaveWindowPosition(); }
     }
 
     private void SaveWindowPosition()
     {
-        var b = WindowState == FormWindowState.Normal ? Bounds : base.RestoreBounds;
+        var b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
         var s = _app.Settings;
         (s.WindowLeft, s.WindowTop, s.WindowWidth, s.WindowHeight) = (b.Left, b.Top, b.Width, b.Height);
         _app.SaveSettings();
@@ -357,196 +326,293 @@ internal sealed class MainForm : Form
         base.OnFormClosing(e);
     }
 
-    // ---------- refresh ----------
-
-    /// <summary>Re-read everything from the app (rates, settings, state).</summary>
     public void RefreshAll()
     {
         if (!Visible) return;
         _loading = true;
+        SuspendLayout();
         try
         {
             var s = _app.Settings;
             int cur = _app.Display.GetCurrentHz();
-            bool saver = _app.Auto.State == SaverState.Saver;
-            _big.Text = $"{cur} Hz";
-            _big.ForeColor = saver ? Theme.Saver : Theme.Text;
-            _mode.Text = _app.Display.CurrentModeText();
-            ClearAndDispose(_chips);
-            if (saver) _chips.Controls.Add(new StatusChip($"Saver active · {_app.Auto.RestoreHz} Hz returns on activity", Theme.Saver));
-            if (_app.Profiles.ActiveProcess != null) _chips.Controls.Add(new StatusChip($"Profile: {_app.Profiles.ActiveProcess}", Theme.Accent));
-            _chips.Visible = _chips.Controls.Count > 0;
-
+            _big.Text = cur + " Hz";
+            _mode.Text = _app.Display.CurrentModeText().Split(" @ ")[0];
             var monitors = _app.Display.GetMonitors();
-            _monitor.Visible = monitors.Count > 1;
-            _monitor.Items.Clear();
-            foreach (var m in monitors) _monitor.Items.Add(m);
-            _monitor.SelectedItem = monitors.FirstOrDefault(m => m.Device == _app.Display.Device);
-
-            ClearAndDispose(_presets);
-            foreach (var preset in s.Presets)
+            if (!_monitor.Items.Cast<MonitorInfo>().SequenceEqual(monitors))
             {
-                var p = preset;
-                int hz = _app.ResolvePreset(p);
-                _presets.Controls.Add(FlatButton($"{p.Name}  ·  {hz} Hz", (_, _) => _app.ApplyPreset(p), $"Switch to {hz} Hz", hz == cur));
+                _monitor.Items.Clear();
+                foreach (var m in monitors) _monitor.Items.Add(m);
             }
-            if (s.Presets.Count == 0) _presets.Controls.Add(new Label { Text = "No presets yet.", AutoSize = true, ForeColor = Theme.TextMuted });
+            var selectedMonitor = monitors.FirstOrDefault(m => m.Device == _app.Display.Device);
+            _monitor.SelectedItem = selectedMonitor;
+            _monitor.Visible = monitors.Count > 1;
+            _monitorName.Visible = monitors.Count <= 1;
+            _monitorName.Text = selectedMonitor?.Label ?? "No monitor detected";
+            _monitorName.AccessibleName = _monitorName.Text;
+            _monitor.AccessibleDescription = selectedMonitor?.Label;
+            _tips.SetToolTip(_monitor, selectedMonitor?.Label);
+            _tips.SetToolTip(_monitorName, _monitorName.Text);
 
-            ClearAndDispose(_rates);
-            var supported = _app.Display.GetSupportedHz();
-            foreach (int hz in _app.VisibleRates())
+            var visibleRates = _app.VisibleRates();
+            if (!_rates.Controls.Cast<PillButton>().Select(b => int.Parse(b.Name)).SequenceEqual(visibleRates))
             {
-                int target = hz;
-                var b = FlatButton($"{hz}", (_, _) => _app.SetHz(target), $"Switch to {hz} Hz", hz == cur);
-                b.AutoSize = false; b.Width = 66; b.Height = 40;
-                _rates.Controls.Add(b);
+                var oldFocused = _rates.Controls.Cast<PillButton>().FirstOrDefault(b => b.Focused)?.Name;
+                ClearAndDispose(_rates);
+                foreach (int hz in visibleRates)
+                {
+                    int target = hz;
+                    var button = ActionButton(hz + " Hz", (_, _) => ApplyRate(target));
+                    button.Name = hz.ToString();
+                    button.AccessibleName = hz + " hertz";
+                    button.AutoSize = false;
+                    button.Size = new Size(Theme.Dp(this, 86), Theme.Dp(this, 40));
+                    _rates.Controls.Add(button);
+                }
+                if (oldFocused != null) (_rates.Controls.Find(oldFocused, false).FirstOrDefault() ?? _rates.Controls.Cast<Control>().FirstOrDefault())?.Focus();
+            }
+            foreach (PillButton button in _rates.Controls) button.Selected = button.Name == cur.ToString();
+            if (_presets.Controls.Count != Math.Max(1, s.Presets.Count) || (s.Presets.Count == 0) != (_presets.Controls[0] is Label))
+            {
+                ClearAndDispose(_presets);
+                if (s.Presets.Count == 0) _presets.Controls.Add(TextLabel("No presets", muted: true));
+                else for (int i = 0; i < s.Presets.Count; i++)
+                {
+                    int index = i;
+                    _presets.Controls.Add(ActionButton("", (_, _) => ApplyRate(_app.ResolvePreset(_app.Settings.Presets[index]))));
+                }
+            }
+            for (int i = 0; i < s.Presets.Count; i++)
+            {
+                var p = s.Presets[i];
+                var button = (PillButton)_presets.Controls[i];
+                button.Text = p.Name + "  " + _app.ResolvePreset(p) + " Hz";
+                button.MaximumSize = new Size(Math.Max(1, _presets.Width), 0);
+                _tips.SetToolTip(button, button.Text);
             }
             _showAll.Checked = s.ShowAllRates;
-
             _auto.Checked = s.AutoEnabled;
+            _saverFields.Enabled = s.AutoEnabled;
             _idle.Value = Math.Clamp(s.IdleMinutes, 1, 240);
             _restore.Value = Math.Clamp(s.RestoreSeconds, 1, 60);
-            _saverHz.Items.Clear();
-            foreach (int hz in supported) _saverHz.Items.Add(hz);
+            var supported = _app.Display.GetSupportedHz();
+            if (!_saverHz.Items.Cast<int>().SequenceEqual(supported))
+            { _saverHz.Items.Clear(); foreach (int hz in supported) _saverHz.Items.Add(hz); }
             _saverHz.SelectedItem = s.SaverHz;
             _saverBri.SelectedIndex = s.SaverBrightness < 0 ? 0 : Math.Clamp((int)Math.Round(s.SaverBrightness / 10.0), 1, 9);
             _briRestore.Checked = s.RestoreBrightnessOnStart;
-
             _profilesOn.Checked = s.ProfilesEnabled;
-            int active = s.Profiles.Count(p => p.Enabled);
-            _profilesInfo.Text = s.Profiles.Count == 0
-                ? "No apps added yet."
-                : string.Join(", ", s.Profiles.Where(p => p.Enabled).Take(6).Select(p => $"{Match.Normalize(p.Process)} → {(p.Hz <= 0 ? "highest" : p.Hz + " Hz")}"))
-                  + (active > 6 ? $" (+{active - 6} more)" : "");
-            _hotkeys.Text = s.Hotkeys.Count == 0 ? "No hotkeys set." : string.Join("\n", s.Hotkeys.Select(HotkeyText));
+            var active = s.Profiles.Where(p => p.Enabled).ToList();
+            _profilesInfo.Text = s.Profiles.Count == 0 ? "No app profiles" : active.Count + " enabled" +
+                (active.Count == 0 ? "" : "\n" + string.Join("\n", active.Take(3).Select(p => Match.Normalize(p.Process) + "    " + (p.Hz <= 0 ? "Highest" : p.Hz + " Hz")))) +
+                (active.Count > 3 ? "\n" + (active.Count - 3) + " more" : "");
+            _manageProfiles.Text = s.Profiles.Count == 0 ? "Add app…" : "Manage profiles…";
+            RefreshShortcuts();
             _alwaysOnTop.Checked = s.AlwaysOnTopEnabled;
-            _pinOutline.Checked = s.AlwaysOnTopOutline;
-            _pinSound.Checked = s.AlwaysOnTopSound;
-            _pinMouse.Checked = s.AlwaysOnTopMouseMenu;
-            _pinThickness.Value = s.AlwaysOnTopOutlineThickness;
             RefreshAlwaysOnTop();
             _notify.Checked = s.NotifyOnAutoSwitch;
             _startup.Checked = _app.IsStartupEnabled();
         }
-        finally { _loading = false; }
+        finally { _loading = false; ResumeLayout(true); }
         RefreshBrightness();
         UpdateStatus();
-        Invalidate(true);   // accent color may have changed
+        Invalidate(true);
     }
 
-    /// <summary>Updates the brightness card from the service; leaves the slider alone while it is being dragged.</summary>
+    private void ApplyRate(int hz)
+    {
+        _rateError = null;
+        _displayStatus.Text = "Applying " + hz + " Hz…";
+        _displayStatus.Refresh();
+        _app.SetHz(hz);
+        int actual = _app.Display.GetCurrentHz();
+        if (actual != hz) _rateError = "Could not apply " + hz + " Hz. Current rate: " + actual + " Hz.";
+        UpdateStatus();
+    }
+
+    private void RefreshShortcuts()
+    {
+        var bindings = _app.Settings.Hotkeys;
+        string signature = string.Join("\n", bindings.Select(b => b.Keys + "|" + b.Action + "|" + b.Hz + "|" + b.Preset));
+        if (signature == _hotkeySignature) return;
+        _hotkeySignature = signature;
+        ClearAndDispose(_hotkeys);
+        if (bindings.Count == 0) _hotkeys.Controls.Add(TextLabel("No shortcuts configured", muted: true));
+        foreach (var binding in bindings)
+        {
+            string action = binding.Action switch
+            {
+                "SetHz" => "Set " + binding.Hz + " Hz",
+                "SetMax" => "Highest refresh rate",
+                "Preset" => "Apply " + binding.Preset,
+                "Cycle" => "Next preset",
+                "ToggleAlwaysOnTop" => "Pin or unpin active window",
+                "ToggleAuto" => "Toggle auto power-saver",
+                _ => binding.Action,
+            };
+            var keys = TextLabel(binding.Keys);
+            keys.BackColor = Theme.SurfaceRaised;
+            keys.Padding = new Padding(10, 6, 10, 6);
+            keys.AccessibleName = action + ": " + binding.Keys;
+            keys.Tag = "keycap";
+            var row = Heading(action, keys);
+            row.Controls[0].Font = Theme.Font();
+            row.Margin = new Padding(0, 0, 0, 12);
+            _hotkeys.Controls.Add(row);
+        }
+        Theme.Style(_hotkeys);
+    }
+
     private void RefreshBrightness()
     {
         if (!Visible || _bri.Capture) return;
-        var b = _app.Brightness;
-        bool ok = b.IsSupported;
-        bool soft = b.Mode == BrightnessMode.Software;
+        var brightness = _app.Brightness;
         bool wasLoading = _loading;
         _loading = true;
         try
         {
-            _bri.Minimum = soft ? BrightnessService.SoftwareFloor : 0;
-            _bri.Value = Math.Clamp(b.Get(), _bri.Minimum, _bri.Maximum);
-            _briValue.Text = ok ? _bri.Value + "%" : "n/a";
+            _bri.Minimum = brightness.Mode == BrightnessMode.Software ? BrightnessService.SoftwareFloor : 0;
+            _bri.Value = Math.Clamp(brightness.Get(), _bri.Minimum, 100);
+            _briValue.Text = brightness.IsSupported ? _bri.Value + "%" : "Unavailable";
         }
         finally { _loading = wasLoading; }
-        _bri.Enabled = _briDown.Enabled = _briUp.Enabled = _briRestore.Enabled = _saverBri.Enabled = ok;
-        _briInfo.Text = !ok ? "This monitor does not allow brightness control."
-            : soft ? "Software dimming: only darkens the picture. Turn on DDC/CI in the monitor's own menu for real backlight control."
-            : "";
+        _bri.Enabled = _briDown.Enabled = _briUp.Enabled = brightness.IsSupported;
+        _briRestore.Enabled = brightness.IsSupported;
+        _saverBri.Enabled = brightness.IsSupported && _app.Settings.AutoEnabled;
+        _briInfo.Text = !brightness.IsSupported ? "This monitor does not allow brightness control."
+            : brightness.Mode == BrightnessMode.Software ? "Software dimming: does not change the backlight.\nEnable DDC/CI in the monitor menu for backlight control. May conflict with Night light or HDR." : "";
         _briInfo.Visible = _briInfo.Text.Length > 0;
     }
 
     private void StepBrightness(int delta)
     {
-        _app.SetBrightness(Math.Clamp(_app.Brightness.Get() + delta, 0, 100));
+        _app.SetBrightness(Math.Clamp(_app.Brightness.Get() + delta, _bri.Minimum, 100));
         _app.CommitBrightness();
         RefreshBrightness();
     }
 
-    internal void ShowAlwaysOnTopSettings() => _rail.SelectedIndex = 3;
+    internal void ShowAlwaysOnTopSettings()
+    {
+        _rail.SelectedIndex = 3;
+        if (_pinEditor != null) { _pinEditor.Activate(); return; }
+        using var editor = new AlwaysOnTopSettingsForm(_app);
+        _pinEditor = editor;
+        try { editor.ShowDialog(this); }
+        finally { _pinEditor = null; RefreshAll(); }
+    }
 
     internal void RefreshAlwaysOnTop()
     {
         _alwaysOnTopStatus.Text = _app.AlwaysOnTopStatus;
         if (_unpinAll != null) _unpinAll.Enabled = _app.HasPinnedWindows;
+        _pinEditor?.RefreshStatus();
     }
 
     private void UpdateStatus()
     {
+        _pauseAction.Text = _app.Pause.IsPaused ? "Resume" : "Pause…";
+        _pauseStatus.Text = _app.Pause.IsPaused ? _app.Pause.Description : "";
+        _pauseStatus.Visible = _app.Pause.IsPaused;
+        _retryRestore.Visible = _app.Pause.RestorationPending;
         _status.Text = _app.Auto.Status;
+        _status.Visible = !_app.Pause.IsPaused;
+        _bar.Visible = !_app.Pause.IsPaused && _app.Settings.AutoEnabled && _app.Auto.Progress > 0;
+        _bar.Set(_app.Auto.Progress, _app.Auto.State == SaverState.Saver ? Theme.Saver : Theme.Accent);
         bool saver = _app.Auto.State == SaverState.Saver;
-        _bar.Set(_app.Auto.Progress, saver ? Theme.Saver : Theme.Accent);
+        _displayStatus.Text = _rateError ?? (_app.Pause.IsPaused ? _app.Pause.Description : saver ? "Saver active: " + _app.Display.GetCurrentHz() + " Hz; " + _app.Auto.RestoreHz + " Hz returns on activity."
+            : _app.Profiles.ActiveProcess != null ? "App profile: " + _app.Profiles.ActiveProcess : "");
+        _displayStatus.Tag = _rateError != null ? "error" : "muted";
+        _displayStatus.ForeColor = _rateError != null ? Theme.DangerText : Theme.TextMuted;
     }
 
-    // ---------- small UI helpers ----------
-
-    private static NumberBox Num(int min, int max) => new() { Minimum = min, Maximum = max, Width = 104 };
-
-    private static FlowLayoutPanel Stack() =>
-        new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-
-    private static string HotkeyText(HotkeyBinding b) => b.Action switch
+    internal static Label TextLabel(string text, bool muted = false, float size = 10.5f, bool bold = false) => new()
     {
-        "SetHz" => $"{b.Keys}   →   {b.Hz} Hz",
-        "SetMax" => $"{b.Keys}   →   highest rate",
-        "Preset" => $"{b.Keys}   →   preset “{b.Preset}”",
-        "Cycle" => $"{b.Keys}   →   next preset",
-        "ToggleAlwaysOnTop" => $"{b.Keys}   ->   toggle active window always on top",
-        "ToggleAuto" => $"{b.Keys}   →   toggle auto power-saver",
-        _ => b.Keys,
+        Text = text, AutoSize = true, Margin = Padding.Empty, Font = Theme.Font(size, bold ? FontStyle.Bold : FontStyle.Regular),
+        ForeColor = muted ? Theme.TextMuted : Theme.Text, Tag = muted ? "muted" : null,
     };
 
-    private PillButton FlatButton(string text, EventHandler onClick, string tip, bool selected = false)
+    private static NumberBox Num(int min, int max) => new() { Minimum = min, Maximum = max, Width = 112, Height = 36 };
+
+    internal static TableLayoutPanel Heading(string title, Control action = null)
     {
-        var b = new PillButton { Text = text, Selected = selected };
-        b.Click += onClick;
-        if (tip != null) _tips.SetToolTip(b, tip);
-        return b;
+        var row = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var label = TextLabel(title, size: 12, bold: true);
+        label.Anchor = AnchorStyles.Left;
+        label.Margin = new Padding(0, 6, 8, 6);
+        row.Controls.Add(label);
+        if (action != null) { action.Anchor = AnchorStyles.Right; action.Margin = Padding.Empty; row.Controls.Add(action); }
+        row.SizeChanged += (_, _) => label.MaximumSize = new Size(Math.Max(1, row.Width - (action?.Width ?? 0) - 16), 0);
+        return row;
     }
 
-    private static void ClearAndDispose(Control parent)
+    private static LayoutStack Section(string title, Control action = null)
     {
-        var old = parent.Controls.Cast<Control>().ToList();
-        parent.Controls.Clear();
-        foreach (var c in old) c.Dispose();
+        var section = new LayoutStack { Margin = new Padding(0, 0, 0, 24) };
+        section.Controls.Add(Heading(title, action));
+        return section;
+    }
+
+    internal static TableLayoutPanel Setting(string title, Control input, string hint = null)
+    {
+        var labels = new LayoutStack { Margin = new Padding(0, 8, 16, 8), Dock = DockStyle.Fill };
+        labels.Controls.Add(TextLabel(title));
+        if (hint != null) { var text = TextLabel(hint, muted: true, size: 9.5f); text.Margin = new Padding(0, 4, 0, 0); labels.Controls.Add(text); }
+        var row = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        input.Anchor = AnchorStyles.Right;
+        input.Margin = new Padding(0, 8, 0, 8);
+        row.Controls.Add(labels);
+        row.Controls.Add(input);
+        return row;
+    }
+
+    private static FlowLayoutPanel WithUnit(Control input, string unit)
+    {
+        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        input.Margin = new Padding(0, 0, 8, 0);
+        var label = TextLabel(unit, muted: true);
+        label.Margin = new Padding(0, 8, 0, 0);
+        row.Controls.Add(input);
+        row.Controls.Add(label);
+        return row;
     }
 
     private static void AddRow(TableLayoutPanel table, string label, Control input)
     {
-        table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 8, 6) });
+        var text = TextLabel(label);
+        text.Anchor = AnchorStyles.Left;
+        text.Margin = new Padding(0, 8, 12, 8);
         input.Anchor = AnchorStyles.Right;
-        input.Margin = new Padding(0, 3, 0, 3);
+        input.Margin = new Padding(0, 4, 0, 4);
+        table.Controls.Add(text);
         table.Controls.Add(input);
+        table.SizeChanged += (_, _) => text.MaximumSize = new Size(Math.Max(1, table.Width - input.Width - 12), 0);
     }
 
-    /// <summary>A titled card; an optional control sits at the right of the title row.</summary>
-    private Card Section(string title, Control body, string hint = null, Control action = null)
+    private static PillButton ActionButton(string text, EventHandler action, bool quiet = false)
     {
-        var card = new Card
+        var button = new PillButton { Text = text, Style = quiet ? PillStyle.Quiet : PillStyle.Neutral };
+        button.Click += action;
+        return button;
+    }
+
+    private static void ClearAndDispose(Control parent)
+    {
+        var controls = parent.Controls.Cast<Control>().ToArray();
+        parent.Controls.Clear();
+        foreach (var control in controls) control.Dispose();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
         {
-            Padding = new Padding(15),
-            MinimumSize = new Size(CardWidth, 0), MaximumSize = new Size(CardWidth, 0), Margin = new Padding(0, 0, 0, 12),
-        };
-        var head = new TableLayoutPanel
-        {
-            AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 6),
-            MinimumSize = new Size(BodyWidth, 0), MaximumSize = new Size(BodyWidth, 0),
-        };
-        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        head.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), Anchor = AnchorStyles.Left, Margin = new Padding(0) });
-        if (action != null)
-        {
-            action.Anchor = AnchorStyles.Right;
-            action.Margin = new Padding(0);
-            head.Controls.Add(action);
+            _timer.Dispose();
+            _tips.Dispose();
+            _app.Brightness.Changed -= RefreshBrightness;
         }
-        card.Controls.Add(head);
-        body.Margin = new Padding(0, 0, 0, 4);
-        card.Controls.Add(body);
-        if (hint != null)
-            card.Controls.Add(new Label { Text = hint, AutoSize = true, MaximumSize = new Size(BodyWidth, 0), ForeColor = Theme.TextMuted });
-        return card;
+        base.Dispose(disposing);
     }
 }

@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace HzSwitcher.UI;
 
@@ -9,24 +10,30 @@ internal static class Theme
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)] private static extern int SetWindowTheme(IntPtr hwnd, string subAppName, string subIdList);
 
-    /// <summary>Windows high-contrast mode: use system colors instead of the palette (checked at launch).</summary>
-    public static readonly bool HighContrast = SystemInformation.HighContrast;
+    /// <summary>Windows high-contrast mode; read live so accessibility changes apply to open windows.</summary>
+    public static bool HighContrast => SystemInformation.HighContrast;
 
     // ----- fixed tokens -----
-    public static readonly Color Bg = HighContrast ? SystemColors.Window : Color.FromArgb(0x16, 0x18, 0x1D);
-    public static readonly Color Surface = HighContrast ? SystemColors.Window : Color.FromArgb(0x1F, 0x22, 0x29);
-    public static readonly Color SurfaceRaised = HighContrast ? SystemColors.ButtonFace : Color.FromArgb(0x2A, 0x2E, 0x37);
-    public static readonly Color Input = HighContrast ? SystemColors.Window : Color.FromArgb(0x16, 0x18, 0x1D);
-    public static readonly Color Border = HighContrast ? SystemColors.WindowText : Color.FromArgb(0x34, 0x39, 0x45);
-    public static readonly Color Track = HighContrast ? SystemColors.GrayText : Color.FromArgb(0x3A, 0x3F, 0x4B);
-    public static readonly Color Text = HighContrast ? SystemColors.WindowText : Color.FromArgb(0xEC, 0xEE, 0xF3);
-    public static readonly Color TextMuted = HighContrast ? SystemColors.GrayText : Color.FromArgb(0x9A, 0xA1, 0xB2);
-    public static readonly Color Saver = HighContrast ? SystemColors.Highlight : Color.FromArgb(0x3F, 0xB9, 0x50);
-    public static readonly Color Warn = HighContrast ? SystemColors.WindowText : Color.FromArgb(0xE3, 0xB3, 0x41);
+    public static Color Bg => HighContrast ? SystemColors.Window : Color.FromArgb(0x20, 0x21, 0x24);
+    public static Color Surface => HighContrast ? SystemColors.Window : Color.FromArgb(0x29, 0x2B, 0x2F);
+    public static Color SurfaceRaised => HighContrast ? SystemColors.ButtonFace : Color.FromArgb(0x35, 0x38, 0x3D);
+    public static Color Input => HighContrast ? SystemColors.Window : SurfaceRaised;
+    public static Color Border => HighContrast ? SystemColors.WindowText : Color.FromArgb(0x50, 0x55, 0x5D);
+    public static Color InputBorder => HighContrast ? SystemColors.WindowText : Color.FromArgb(0x85, 0x8C, 0x96);
+    public static Color Track => HighContrast ? SystemColors.GrayText : Color.FromArgb(0x72, 0x79, 0x83);
+    public static Color Text => HighContrast ? SystemColors.WindowText : Color.FromArgb(0xF1, 0xF3, 0xF4);
+    public static Color TextMuted => HighContrast ? SystemColors.WindowText : Color.FromArgb(0xB5, 0xBA, 0xC1);
+    public static Color Saver => HighContrast ? SystemColors.WindowText : Color.FromArgb(0x72, 0xD4, 0x91);
+    public static Color Warn => HighContrast ? SystemColors.WindowText : Color.FromArgb(0xE3, 0xB3, 0x41);
     /// <summary>Fill for destructive buttons (white text on it).</summary>
-    public static readonly Color Danger = HighContrast ? SystemColors.ButtonFace : Color.FromArgb(0xC0, 0x39, 0x2B);
+    public static Color Danger => HighContrast ? SystemColors.ButtonFace : Color.FromArgb(0xC0, 0x39, 0x2B);
     /// <summary>Danger color for text and icons on dark surfaces.</summary>
-    public static readonly Color DangerText = HighContrast ? SystemColors.WindowText : Color.FromArgb(0xF8, 0x51, 0x49);
+    public static Color DangerText => HighContrast ? SystemColors.WindowText : Color.FromArgb(0xFF, 0x9A, 0x94);
+
+    public static readonly string FontFamilyName = FontFamily.Families.Any(f => f.Name == "Segoe UI Variable Text")
+        ? "Segoe UI Variable Text" : "Segoe UI";
+    public static Font Font(float points = 10.5f, FontStyle style = FontStyle.Regular) => new(FontFamilyName, points, style);
+    public static Color ReadableText(Color fill) => Contrast(fill, Color.White) >= Contrast(fill, Color.Black) ? Color.White : Color.Black;
 
     // ----- accent: follows Windows, so it can change while the app runs -----
     private static readonly Color FallbackAccent = Color.FromArgb(0x4F, 0x8C, 0xFF);
@@ -34,7 +41,7 @@ internal static class Theme
 
     public static Color Accent => _accent;
     /// <summary>White when it reads well on the accent (4.5:1), otherwise whichever of black and white reads better.</summary>
-    public static Color AccentText => Contrast(_accent, Color.White) >= 4.5 || Contrast(_accent, Color.White) >= Contrast(_accent, Color.Black) ? Color.White : Color.Black;
+    public static Color AccentText => HighContrast ? SystemColors.HighlightText : ReadableText(_accent);
 
     /// <summary>Raised (on a system thread) after the Windows accent color changed. Marshal to the UI thread before touching controls.</summary>
     public static event Action AccentChanged;
@@ -42,11 +49,13 @@ internal static class Theme
     /// <summary>Starts listening for Windows accent changes. Call once at startup.</summary>
     public static void Watch()
     {
+        bool highContrast = HighContrast;
         SystemEvents.UserPreferenceChanged += (_, e) =>
         {
-            if (e.Category != UserPreferenceCategory.General && e.Category != UserPreferenceCategory.VisualStyle) return;
             var now = LoadAccent();
-            if (now == _accent) return;
+            bool changed = highContrast != HighContrast || e.Category == UserPreferenceCategory.Color;
+            highContrast = HighContrast;
+            if (now == _accent && !changed) return;
             _accent = now;
             AccentChanged?.Invoke();
         };
@@ -84,17 +93,22 @@ internal static class Theme
     /// <summary>Asks Windows 11 for rounded corners and a themed border on a popup or window (ignored on older Windows).</summary>
     public static void RoundCorners(Control c)
     {
-        if (HighContrast) return;
         void Apply()
         {
-            int round = 2;   // DWMWCP_ROUND
+            int round = HighContrast ? 1 : 2;   // DWMWCP_DONOTROUND / ROUND
             DwmSetWindowAttribute(c.Handle, 33, ref round, sizeof(int));
             int border = Border.R | (Border.G << 8) | (Border.B << 16);   // COLORREF
             DwmSetWindowAttribute(c.Handle, 34, ref border, sizeof(int));
         }
-        if (c.IsHandleCreated) Apply(); else c.HandleCreated += (_, _) => Apply();
-        c.HandleCreated += (_, _) => Apply();   // popups can recreate their handle
+        if (c.IsHandleCreated) Apply();
+        if (!CornerWatches.TryGetValue(c, out _))
+        {
+            CornerWatches.Add(c, new object());
+            c.HandleCreated += (_, _) => Apply();   // popups can recreate their handle
+        }
     }
+
+    private static readonly ConditionalWeakTable<Control, object> CornerWatches = new();
 
     /// <summary>Scales a 96-dpi pixel size for the control's current monitor.</summary>
     public static int Dp(Control c, int px) => (int)Math.Round(px * c.DeviceDpi / 96.0);
@@ -110,7 +124,7 @@ internal static class Theme
 
     private static void TitleBar(Form form)
     {
-        int on = 1;
+        int on = HighContrast ? 0 : 1;
         // 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (19 on older Windows 10 builds)
         if (DwmSetWindowAttribute(form.Handle, 20, ref on, sizeof(int)) != 0)
             DwmSetWindowAttribute(form.Handle, 19, ref on, sizeof(int));
@@ -121,6 +135,13 @@ internal static class Theme
     {
         switch (control)
         {
+            case Label l:
+                l.ForeColor = l.Tag is "muted" ? TextMuted : l.Tag is "warning" ? Warn : l.Tag is "error" ? DangerText : Text;
+                if (l.Tag is "keycap") l.BackColor = SurfaceRaised;
+                break;
+            case CheckBox c:
+                c.ForeColor = Text;
+                break;
             case Button b when !(b.Tag is "styled"):
                 StyleButton(b, b.Tag is "primary" ? Accent : SurfaceRaised);
                 break;
@@ -140,6 +161,7 @@ internal static class Theme
                 Native(t, "DarkMode_CFD");
                 break;
             case FlowLayoutPanel or TableLayoutPanel or Panel:
+                control.BackColor = control.Tag is "surface" ? Surface : control.Parent?.BackColor ?? Bg;
                 if (((ScrollableControl)control).AutoScroll) Native(control, "DarkMode_Explorer");
                 break;
         }
@@ -167,8 +189,21 @@ internal static class Theme
 
     private static void Native(Control c, string theme)
     {
-        if (HighContrast) return;
-        if (c.IsHandleCreated) SetWindowTheme(c.Handle, theme, null);
-        else c.HandleCreated += (_, _) => SetWindowTheme(c.Handle, theme, null);
+        if (c.IsHandleCreated) SetWindowTheme(c.Handle, HighContrast ? null : theme, null);
+        else if (!(c.Tag is "native-themed"))
+        {
+            c.Tag = "native-themed";
+            c.HandleCreated += (_, _) => SetWindowTheme(c.Handle, HighContrast ? null : theme, null);
+        }
+    }
+
+    public static void FitWorkingArea(Form form)
+    {
+        var area = Screen.FromControl(form).WorkingArea;
+        var bounds = form.Bounds;
+        bounds.Size = new Size(Math.Min(bounds.Width, area.Width), Math.Min(bounds.Height, area.Height));
+        bounds.X = Math.Clamp(bounds.X, area.Left, area.Right - bounds.Width);
+        bounds.Y = Math.Clamp(bounds.Y, area.Top, area.Bottom - bounds.Height);
+        form.Bounds = bounds;
     }
 }

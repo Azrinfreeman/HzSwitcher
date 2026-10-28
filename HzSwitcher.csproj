@@ -9,7 +9,7 @@
     <AssemblyName>HzSwitcher</AssemblyName>
     <RootNamespace>HzSwitcher</RootNamespace>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>1.7.3</Version>
+    <Version>1.8.0</Version>
     <Product>HzSwitcher</Product>
     <Company>HzSwitcher</Company>
     <Description>Switch monitor refresh rate from a tray app, with idle and video power-saver.</Description>

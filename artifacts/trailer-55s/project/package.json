@@ -1,0 +1,26 @@
+{
+  "name": "hzswitcher-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HzSwitcher — Every hertz. On your terms. 55-second product film",
+  "scripts": {
+    "studio": "remotion studio src/index.ts --port=3090 --no-open",
+    "check": "tsc --noEmit",
+    "still": "remotion still src/index.ts",
+    "render:landscape": "remotion render src/index.ts Landscape ../HzSwitcher-55s-landscape.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p",
+    "render:vertical": "remotion render src/index.ts Vertical ../HzSwitcher-55s-vertical.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.484",
+    "@remotion/motion-blur": "4.0.484",
+    "@remotion/player": "4.0.484",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "typescript": "5.8.3"
+  }
+}

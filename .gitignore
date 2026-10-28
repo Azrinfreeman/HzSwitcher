@@ -17,3 +17,11 @@ artifacts/**/*.sha256
 /artifacts/trailer/qa/
 /artifacts/trailer/video-silent.mp4
 /artifacts/trailer/source/__pycache__/
+
+# 55 s trailer project: keep editable source, skip renders, QA stills and generated audio
+/artifacts/trailer-55s/qa/
+/artifacts/trailer-55s/*.mp4
+/artifacts/trailer-55s/*.log
+/artifacts/trailer-55s/render.done
+/artifacts/trailer-55s/capture-check.png
+/artifacts/trailer-55s/project/public/audio/*.wav

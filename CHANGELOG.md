@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0 - 2026-10-29
+
+- Added session-only automation pause for 15 minutes, 1 hour, or until restart, with ordered saver/profile restoration, explicit retry after restoration failure, and fresh qualification on resume.
+- Added read-only diagnostics with a sanitized clipboard report, cached brightness backend/read details, and monitor-scoped failures from refresh-rate verification and brightness writes.
+- Reworked Display around monitor identity, discrete refresh-rate choices, neutral preset actions, and brightness controls on one surface.
+- Replaced repeated settings cards with aligned sections, structured shortcut rows, and a compact General page. Detailed pinning preferences now open through Configure.
+- Aligned editor layouts and Save/Cancel footers; moved specialist saver controls into Detection settings without duplicating ordinary automation preferences.
+- Improved contrast, accessible selection/navigation, shortcut recorder keyboard escape routes, stable controls during refresh, and working-area constraints.
+- Commit brightness after mouse-wheel and accessibility changes as well as dragging and keyboard input.
+
 ## 1.7.3 - 2026-10-28
 
 - Suspend Always on top mouse menus and outlines while a fullscreen app or configured game is foreground, so gameplay right-clicks (including Shift+right-click) pass through.

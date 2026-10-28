@@ -21,8 +21,13 @@ public class ProfileService : IDisposable
     private AppProfile _candidate;
     private DateTime _candidateSince;
     private DateTime? _leaveSince;
+    private readonly AutomationPauseService _pause;
+    private readonly Func<string> _device;
+    private string _ownedDevice;
+    private bool _wasPaused;
 
     public string ActiveProcess => _active == null ? null : Match.Normalize(_active.Process);
+    public AutomationReason Reason { get; private set; } = AutomationReason.Starting;
     public event Action<string> Notice;
     public event Action Changed;
 
@@ -37,7 +42,8 @@ public class ProfileService : IDisposable
 
     /// <param name="startTimer">False in tests: Tick() is driven by hand.</param>
     public ProfileService(Func<Settings> settings, IDisplay display, AutoSaverService auto, Func<int, bool> apply,
-                          bool startTimer = true, IForeground foreground = null, IClock clock = null)
+                          bool startTimer = true, IForeground foreground = null, IClock clock = null,
+                          AutomationPauseService pause = null, Func<string> device = null)
     {
         _settings = settings;
         _display = display;
@@ -45,6 +51,10 @@ public class ProfileService : IDisposable
         _apply = apply;
         _foreground = foreground ?? new SystemForeground();
         _clock = clock ?? new SystemClock();
+        _auto.OwnershipSuperseded += OnManualChange;
+        _pause = pause;
+        _device = device ?? (() => _settings().MonitorDevice);
+        if (_pause != null) { _wasPaused = _pause.IsPaused; _pause.Changed += OnPauseChanged; }
         if (!startTimer) return;
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += (_, _) => Tick();
@@ -53,23 +63,35 @@ public class ProfileService : IDisposable
 
     public void Tick()
     {
+        _pause?.Tick();
+        if (_pause?.IsPaused == true) { ResetQualification(); Reason = AutomationReason.Paused; return; }
+        if (_active != null && _ownedDevice != _device()) ClearOwnership();
         var s = _settings();
+        // Lock/confirmation also blocks release after a preference changes.
+        if (_auto.Suspended)
+        {
+            Reason = _auto.Busy ? AutomationReason.Busy : AutomationReason.Locked;
+            ResetQualification();
+            return;
+        }
         if (!s.ProfilesEnabled)
         {
+            Reason = AutomationReason.Disabled;
             if (_active != null) Leave("profiles turned off");
             _candidate = null;
             return;
         }
         // The power-saver owns the rate while it is active; profiles resume once it has restored.
-        if (_auto.State == SaverState.Saver || _auto.Suspended)
+        if (_auto.State == SaverState.Saver)
         {
+            Reason = _auto.Reason;
             _candidate = null;
             _leaveSince = null;
             return;
         }
 
         string proc = _foreground.ProcessName();
-        if (proc.Length == 0) { _candidate = null; return; }
+        if (proc.Length == 0) { _candidate = null; Reason = AutomationReason.ForegroundUnknown; return; }
 
         if (_active != null && !_overridden && _display.GetCurrentHz() != _applied) _overridden = true;
 
@@ -81,9 +103,11 @@ public class ProfileService : IDisposable
             _leaveSince = null;
             if (_active != null && _active.Process == match.Process)
             {
+                Reason = _overridden ? AutomationReason.ManualOverride : AutomationReason.Profile;
                 _candidate = null;
                 return;
             }
+            Reason = AutomationReason.Qualifying;
             if (_candidate == null || _candidate.Process != match.Process) { _candidate = match; _candidateSince = now; return; }
             if ((now - _candidateSince).TotalSeconds < 1.5) return;   // ignore alt-tab flicker
             Enter(match, proc);
@@ -91,6 +115,7 @@ public class ProfileService : IDisposable
         }
 
         _candidate = null;
+        Reason = AutomationReason.Idle;
         if (_active != null)
         {
             _leaveSince ??= now;
@@ -103,7 +128,7 @@ public class ProfileService : IDisposable
         int current = _display.GetCurrentHz();
         int target = _display.Resolve(profile.Hz);
         // Keep only the latest foreground candidate while cooling down. No intermediate rate is applied.
-        if (current != target && _auto.AutomaticSwitchWaitSeconds > 0) return;
+        if (current != target && _auto.AutomaticSwitchWaitSeconds > 0) { Reason = AutomationReason.Cooldown; return; }
         if (current != target)
         {
             if (!_apply(target)) { _auto.OnAutomaticChange(); Log.Write($"Profile {proc}: could not apply {target} Hz"); return; }
@@ -115,6 +140,8 @@ public class ProfileService : IDisposable
         _overridden = false;
         _candidate = null;
         _active = profile;
+        _ownedDevice = _device();
+        Reason = AutomationReason.Profile;
         _applied = target;
         Changed?.Invoke();
     }
@@ -135,5 +162,43 @@ public class ProfileService : IDisposable
         Changed?.Invoke();
     }
 
-    public void Dispose() => _timer?.Dispose();
+    public void ResetQualification() { _candidate = null; _leaveSince = null; }
+
+    private void OnPauseChanged()
+    {
+        if (_wasPaused && !_pause.IsPaused) ResetQualification();
+        _wasPaused = _pause.IsPaused;
+        if (_wasPaused) ResetQualification();
+        Reason = _wasPaused ? AutomationReason.Paused : AutomationReason.Starting;
+    }
+
+    public AutomationReleaseResult ReleaseForPause()
+    {
+        ResetQualification();
+        if (_active == null) return AutomationReleaseResult.NoOwnership;
+        if (_ownedDevice != _device() || _overridden || _display.GetCurrentHz() != _applied)
+        { ClearOwnership(); return AutomationReleaseResult.Superseded; }
+        if (_before > 0 && _before != _applied && !_apply(_before))
+        { Reason = AutomationReason.RestoreFailed; return AutomationReleaseResult.Failed; }
+        _auto.OnAutomaticChange();
+        ClearOwnership();
+        return AutomationReleaseResult.Released;
+    }
+
+    private void ClearOwnership()
+    {
+        _active = null;
+        _ownedDevice = null;
+        _overridden = false;
+        ResetQualification();
+        Reason = _pause?.IsPaused == true ? AutomationReason.Paused : AutomationReason.Idle;
+        Changed?.Invoke();
+    }
+
+    public void Dispose()
+    {
+        if (_pause != null) _pause.Changed -= OnPauseChanged;
+        _auto.OwnershipSuperseded -= OnManualChange;
+        _timer?.Dispose();
+    }
 }

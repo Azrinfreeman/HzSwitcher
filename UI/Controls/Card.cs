@@ -1,7 +1,7 @@
 namespace HzSwitcher.UI.Controls;
 
 /// <summary>A rounded, bordered surface that stacks its children top to bottom.</summary>
-internal sealed class Card : FlowLayoutPanel
+internal sealed class Card : LayoutStack
 {
     public Card()
     {
@@ -11,6 +11,7 @@ internal sealed class Card : FlowLayoutPanel
         FlowDirection = FlowDirection.TopDown;
         WrapContents = false;
         BackColor = Theme.Surface;
+        Tag = "surface";
         Padding = new Padding(16);
     }
 
@@ -22,6 +23,6 @@ internal sealed class Card : FlowLayoutPanel
         float radius = Theme.Dp(this, 8);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         Gfx.FillRound(g, r, radius, Theme.Surface);
-        Gfx.StrokeRound(g, r, radius, Theme.Border, 1f);
+        if (Theme.HighContrast) Gfx.StrokeRound(g, r, radius, Theme.Border, 1f);
     }
 }

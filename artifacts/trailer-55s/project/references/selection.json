@@ -1,0 +1,34 @@
+[
+  {
+    "name": "crane-rise-reveal",
+    "style": "crane-rise-reveal",
+    "card": "references/shots/opening/crane-rise-reveal.md",
+    "demo": "demos\\opening\\crane-rise-reveal\\CraneRiseReveal.tsx",
+    "gallery": "https://vincentwei1021.github.io/video-shotcraft/media/crane-rise-reveal.mp4",
+    "referenceStatus": "downloaded"
+  },
+  {
+    "name": "cursor-flyover",
+    "style": "cursor-flyover",
+    "card": "references/shots/camera/cursor-flyover.md",
+    "demo": "demos\\camera\\cursor-flyover\\CursorFlyover.tsx",
+    "gallery": "https://vincentwei1021.github.io/video-shotcraft/media/cursor-flyover.mp4",
+    "referenceStatus": "downloaded"
+  },
+  {
+    "name": "blur-slide",
+    "style": "blur-slide",
+    "card": "references/shots/typography/blur-slide.md",
+    "demo": "demos\\typography\\blur-slide\\BlurSlide.tsx",
+    "gallery": "https://vincentwei1021.github.io/video-shotcraft/media/blur-slide.mp4",
+    "referenceStatus": "downloaded"
+  },
+  {
+    "name": "logo-shrink-wordmark-lockup",
+    "style": "logo-shrink-wordmark-lockup",
+    "card": "references/shots/outro/logo-shrink-wordmark-lockup.md",
+    "demo": "demos\\outro\\logo-shrink-wordmark-lockup\\LogoShrinkWordmarkLockup.tsx",
+    "gallery": "https://vincentwei1021.github.io/video-shotcraft/media/logo-shrink-wordmark-lockup.mp4",
+    "referenceStatus": "downloaded"
+  }
+]

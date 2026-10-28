@@ -14,6 +14,7 @@ internal sealed class ThemedSlider : Control
     /// <summary>Raised when the user (mouse, wheel or keyboard) changes the value.</summary>
     public event EventHandler Scroll;
     public event EventHandler ValueChanged;
+    public event EventHandler InteractionCompleted;
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public int Minimum { get => _min; set { _min = value; if (_max < _min) _max = _min; Value = _value; Invalidate(); } }
@@ -29,6 +30,7 @@ internal sealed class ThemedSlider : Control
             int v = Math.Clamp(value, _min, _max);
             if (v == _value) return;
             _value = v;
+            AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
             Invalidate();
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -52,7 +54,12 @@ internal sealed class ThemedSlider : Control
         public override string Value
         {
             get => _owner.Value.ToString();
-            set { if (int.TryParse(value, out int v)) _owner.Value = v; }
+            set
+            {
+                if (!_owner.Enabled || !int.TryParse(value, out int v)) return;
+                _owner.Step(Math.Clamp(v, _owner.Minimum, _owner.Maximum) - _owner.Value);
+                _owner.InteractionCompleted?.Invoke(_owner, EventArgs.Empty);
+            }
         }
     }
 
@@ -82,13 +89,29 @@ internal sealed class ThemedSlider : Control
         base.OnMouseDown(e);
     }
     protected override void OnMouseMove(MouseEventArgs e) { if (_drag) SetFromX(e.X); base.OnMouseMove(e); }
-    protected override void OnMouseUp(MouseEventArgs e) { _drag = false; Capture = false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        _drag = false; Capture = false; Invalidate(); base.OnMouseUp(e);
+        InteractionCompleted?.Invoke(this, EventArgs.Empty);
+    }
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
     protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
-    protected override void OnMouseWheel(MouseEventArgs e) { Step(e.Delta > 0 ? SmallChange : -SmallChange); base.OnMouseWheel(e); }
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        Step(e.Delta > 0 ? SmallChange : -SmallChange);
+        InteractionCompleted?.Invoke(this, EventArgs.Empty);
+        base.OnMouseWheel(e);
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down or Keys.PageUp or Keys.PageDown or Keys.Home or Keys.End)
+            InteractionCompleted?.Invoke(this, EventArgs.Empty);
+    }
 
     protected override bool IsInputKey(Keys keyData) =>
         (keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown
@@ -116,7 +139,7 @@ internal sealed class ThemedSlider : Control
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         float cy = Height / 2f;
-        float th = Theme.Dp(this, 6);
+        float th = Theme.Dp(this, 4);
         float x = ThumbX;
         var track = new RectangleF(Pad, cy - th / 2, Width - 2 * Pad, th);
         Color fill = Enabled ? Theme.Accent : Theme.TextMuted;
